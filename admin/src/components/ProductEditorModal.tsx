@@ -12,6 +12,7 @@ export interface ProductFormState {
   galleryUrls: string[];
   descriptionHtml: string;
   status: 'ON_SALE' | 'OFF_SALE';
+  sortOrder: number;
   skus: Array<ProductSku & { priceYuan: string }>;
 }
 
@@ -105,7 +106,7 @@ export function ProductEditorModal({
         galleryUrls: gallery,
         descriptionHtml: form.descriptionHtml,
         status: form.status,
-        sortOrder: 100,
+        sortOrder: form.sortOrder,
         skus: form.skus.map((s) => ({
           ...(s.id ? { id: s.id } : {}),
           skuCode: s.skuCode.trim(),
@@ -205,6 +206,7 @@ export function ProductEditorModal({
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
+                e.target.value = '';
                 if (f) handleUploadCover(f);
               }}
             />
@@ -234,6 +236,7 @@ export function ProductEditorModal({
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
+                  e.target.value = '';
                   if (f) handleUploadGallery(f);
                 }}
               />

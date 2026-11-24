@@ -23,6 +23,7 @@ export const AFTER_SALE_STATUS_LABEL: Record<string, string> = {
   PENDING_REVIEW: '待商家审核',
   APPROVED_REFUNDING: '退款打款中',
   REFUNDED: '已退款',
+  REFUND_FAILED: '退款异常，请联系客服',
   REJECTED: '已驳回',
   CANCELLED: '已取消'
 };

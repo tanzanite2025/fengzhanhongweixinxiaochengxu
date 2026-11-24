@@ -19,9 +19,9 @@ const addressBody = z.object({
     normalizePhoneInput,
     z.string().regex(/^1\d{10}$/, '请输入正确的11位手机号')
   ),
-  province: z.string().trim().min(1).max(32),
-  city: z.string().trim().min(1).max(32),
-  district: z.string().trim().min(1).max(32),
+  province: z.string().trim().min(2, '请选择有效省份').max(32),
+  city: z.string().trim().min(2, '请选择有效城市').max(32),
+  district: z.string().trim().min(2, '请选择有效区县').max(32),
   detailAddress: z.string().trim().min(1).max(160),
   isDefault: z.boolean().default(false)
 });

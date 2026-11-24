@@ -44,11 +44,19 @@ Page({
       wx.showToast({ title: '结算商品参数缺失', icon: 'none' });
       return;
     }
-    const items = JSON.parse(decodeURIComponent(options.items)) as CheckoutLine[];
-    this.setData({
-      items,
-      fromCart: options.fromCart === '1'
-    });
+    try {
+      const items = JSON.parse(decodeURIComponent(options.items)) as CheckoutLine[];
+      if (!Array.isArray(items) || items.length === 0) {
+        wx.showToast({ title: '请选择至少一件商品进行结算', icon: 'none' });
+        return;
+      }
+      this.setData({
+        items,
+        fromCart: options.fromCart === '1'
+      });
+    } catch {
+      wx.showToast({ title: '结算商品参数格式无效', icon: 'none' });
+    }
   },
 
   onShow() {
@@ -78,6 +86,12 @@ Page({
       this.setData({ address, previewError: '' });
 
       if (!address) {
+        this.setData({
+          previewItems: [],
+          itemsAmountText: '0.00',
+          shippingFeeText: '0.00',
+          totalAmountText: '0.00'
+        });
         return;
       }
 
@@ -149,8 +163,14 @@ Page({
       createdOrderId = created.id;
 
       const payResult = await executeOrderPayment(created.id, { promptInMock: true });
+      const toastText =
+        payResult === 'PAID'
+          ? '支付成功'
+          : payResult === 'PENDING'
+            ? '支付确认中，请勿重复付款'
+            : '已生成待付款订单';
       wx.showToast({
-        title: payResult === 'PAID' ? '支付成功' : '已生成待付款订单',
+        title: toastText,
         icon: payResult === 'PAID' ? 'success' : 'none'
       });
       wx.redirectTo({ url: `/pages/order-detail/order-detail?id=${created.id}` });

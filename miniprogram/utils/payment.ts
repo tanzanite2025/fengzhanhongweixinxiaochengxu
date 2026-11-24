@@ -12,14 +12,19 @@ interface PayInitResponse {
   };
 }
 
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Shared WeChat JSAPI / sandbox payment execution service.
- * Returns 'PAID' when payment is confirmed, or 'CANCELLED' when user aborts payment.
+ * Returns 'PAID' when confirmed, 'PENDING' if bank settlement is still propagating,
+ * or 'CANCELLED' when the buyer aborts payment.
  */
 export async function executeOrderPayment(
   orderId: number,
   options: { promptInMock: boolean }
-): Promise<'PAID' | 'CANCELLED'> {
+): Promise<'PAID' | 'PENDING' | 'CANCELLED'> {
   const payInit = await apiRequest<PayInitResponse>({
     url: `/api/orders/${orderId}/pay`,
     method: 'POST'
@@ -68,9 +73,20 @@ export async function executeOrderPayment(
     return 'CANCELLED';
   }
 
-  await apiRequest({
-    url: `/api/orders/${orderId}/sync-pay`,
-    method: 'POST'
-  });
-  return 'PAID';
+  // Poll sync-pay up to 3 times to absorb transient bank USERPAYING settlement delay
+  const retryDelays = [0, 1000, 1500];
+  for (const waitMs of retryDelays) {
+    if (waitMs > 0) {
+      await delayMs(waitMs);
+    }
+    const synced = await apiRequest<{ status: string }>({
+      url: `/api/orders/${orderId}/sync-pay`,
+      method: 'POST'
+    });
+    if (synced.status !== 'PENDING_PAYMENT') {
+      return 'PAID';
+    }
+  }
+
+  return 'PENDING';
 }

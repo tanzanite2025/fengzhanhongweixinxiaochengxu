@@ -1,4 +1,12 @@
 const ADMIN_TOKEN_KEY = 'admin_token';
+let unauthorizedListener: ((message: string) => void) | null = null;
+
+/**
+ * Register a global callback invoked when any authenticated admin request returns 401.
+ */
+export function registerUnauthorizedHandler(handler: ((message: string) => void) | null): void {
+  unauthorizedListener = handler;
+}
 
 /**
  * Format integer cents to CNY string.
@@ -36,15 +44,21 @@ export async function adminFetch<T>(path: string, init: RequestInit = {}): Promi
   const text = await response.text();
   let parsed: unknown = null;
   if (text.length > 0) {
-    parsed = JSON.parse(text);
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
   }
 
   if (!response.ok) {
+    const errObj = parsed as { message?: string } | null;
+    const msg = errObj?.message ?? `请求失败 (${response.status})`;
     if (response.status === 401) {
       clearAdminToken();
+      unauthorizedListener?.(msg);
     }
-    const errObj = parsed as { message?: string } | null;
-    throw new Error(errObj?.message ?? `请求失败 (${response.status})`);
+    throw new Error(msg);
   }
 
   return parsed as T;

@@ -41,6 +41,9 @@
     <view wx:if="{{order.latestAfterSale.rejectReason}}" class="reject-text">
       驳回说明：{{order.latestAfterSale.rejectReason}}
     </view>
+    <view wx:if="{{order.latestAfterSale.canCancel}}" style="margin-top: 20rpx;">
+      <view class="btn-outline op-btn" bindtap="onCancelAfterSale">撤销申请</view>
+    </view>
   </view>
 
   <view class="action-bar">

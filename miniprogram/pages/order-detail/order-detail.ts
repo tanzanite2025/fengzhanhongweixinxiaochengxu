@@ -13,14 +13,17 @@ Page({
       totalAmountText: string;
       formattedItems: Array<OrderDto['items'][number] & { unitPriceText: string }>;
       latestAfterSale: {
+        id: number;
         afterSaleNo: string;
         statusLabel: string;
+        canCancel: boolean;
         reason: string;
         rejectReason: string | null;
       } | null;
     }) | null,
     showRefundModal: false,
-    refundReason: ''
+    refundReason: '',
+    paying: false
   },
 
   onLoad(options: { id?: string }) {
@@ -30,7 +33,35 @@ Page({
       return;
     }
     this.setData({ orderId: id });
-    this.loadDetail(id);
+  },
+
+  onShow() {
+    if (this.data.orderId > 0 && !this.data.paying) {
+      this.refreshOrderState(this.data.orderId);
+    }
+  },
+
+  onPullDownRefresh() {
+    if (this.data.orderId > 0) {
+      this.refreshOrderState(this.data.orderId).finally(() => wx.stopPullDownRefresh());
+    } else {
+      wx.stopPullDownRefresh();
+    }
+  },
+
+  async refreshOrderState(id: number) {
+    await this.loadDetail(id);
+    if (this.data.order?.status === 'PENDING_PAYMENT') {
+      try {
+        await apiRequest({ url: `/api/orders/${id}/sync-pay`, method: 'POST' });
+        await this.loadDetail(id);
+      } catch (err: unknown) {
+        wx.showToast({
+          title: err instanceof Error ? err.message : '同步支付状态失败',
+          icon: 'none'
+        });
+      }
+    }
   },
 
   async loadDetail(id: number) {
@@ -50,8 +81,10 @@ Page({
           })),
           latestAfterSale: latestAs
             ? {
+                id: latestAs.id,
                 afterSaleNo: latestAs.afterSaleNo,
                 statusLabel: AFTER_SALE_STATUS_LABEL[latestAs.status] ?? latestAs.status,
+                canCancel: latestAs.status === 'PENDING_REVIEW',
                 reason: latestAs.reason,
                 rejectReason: latestAs.rejectReason
               }
@@ -74,17 +107,23 @@ Page({
 
   async onPayNow() {
     const order = this.data.order;
-    if (!order) return;
+    if (!order || this.data.paying) return;
+    this.setData({ paying: true });
     try {
       const result = await executeOrderPayment(order.id, { promptInMock: false });
       if (result === 'PAID') {
         wx.showToast({ title: '支付成功', icon: 'success' });
+      } else if (result === 'PENDING') {
+        wx.showToast({ title: '支付确认中，请勿重复付款，稍后刷新查看', icon: 'none' });
       } else {
         wx.showToast({ title: '您已取消支付', icon: 'none' });
       }
       await this.loadDetail(order.id);
     } catch (err: unknown) {
       wx.showToast({ title: err instanceof Error ? err.message : '支付失败', icon: 'none' });
+      await this.loadDetail(order.id);
+    } finally {
+      this.setData({ paying: false });
     }
   },
 
@@ -167,6 +206,30 @@ Page({
       await this.loadDetail(order.id);
     } catch (err: unknown) {
       wx.showToast({ title: err instanceof Error ? err.message : '提交失败', icon: 'none' });
+    }
+  },
+
+  async onCancelAfterSale() {
+    const order = this.data.order;
+    const afterSale = order?.latestAfterSale;
+    if (!order || !afterSale || !afterSale.canCancel) return;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      wx.showModal({
+        title: '撤销售后申请',
+        content: '确认撤销当前售后申请并恢复原订单状态吗？',
+        success: (res) => resolve(res.confirm),
+        fail: () => resolve(false)
+      });
+    });
+    if (!confirmed) return;
+
+    try {
+      await apiRequest({ url: `/api/after-sales/${afterSale.id}/cancel`, method: 'POST' });
+      wx.showToast({ title: '已撤销售后申请', icon: 'success' });
+      await this.loadDetail(order.id);
+    } catch (err: unknown) {
+      wx.showToast({ title: err instanceof Error ? err.message : '撤销失败', icon: 'none' });
     }
   }
 });

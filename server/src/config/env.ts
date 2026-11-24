@@ -69,6 +69,17 @@ function requireNonEmpty(value: string | undefined, name: string): string {
   return value.trim();
 }
 
+function requireHttpsInProduction(
+  url: string,
+  name: string,
+  nodeEnv: 'development' | 'test' | 'production'
+): string {
+  if (nodeEnv === 'production' && !url.startsWith('https://')) {
+    throw new Error(`[CRITICAL] ${name} must start with https:// in production: ${url}`);
+  }
+  return url;
+}
+
 /**
  * Load and strictly validate application configuration from process.env.
  * Throws a blocking [CRITICAL] error if any required setting is absent or invalid.
@@ -86,17 +97,34 @@ export function loadConfig(sourceEnv: NodeJS.ProcessEnv = process.env): AppConfi
     throw new Error('[CRITICAL] WECHAT_MODE=sandbox_mock is strictly forbidden when NODE_ENV=production');
   }
 
+  const baseUrl = requireHttpsInProduction(
+    data.BASE_URL.replace(/\/+$/, ''),
+    'BASE_URL',
+    data.NODE_ENV
+  );
+
   if (data.WECHAT_MODE === 'live') {
     const apiV3Key = requireNonEmpty(data.WECHAT_API_V3_KEY, 'WECHAT_API_V3_KEY');
     if (Buffer.byteLength(apiV3Key, 'utf8') !== 32) {
       throw new Error('[CRITICAL] WECHAT_API_V3_KEY must be exactly 32 UTF-8 bytes');
     }
 
+    const payNotifyUrl = requireHttpsInProduction(
+      requireNonEmpty(data.WECHAT_PAY_NOTIFY_URL, 'WECHAT_PAY_NOTIFY_URL'),
+      'WECHAT_PAY_NOTIFY_URL',
+      data.NODE_ENV
+    );
+    const refundNotifyUrl = requireHttpsInProduction(
+      requireNonEmpty(data.WECHAT_REFUND_NOTIFY_URL, 'WECHAT_REFUND_NOTIFY_URL'),
+      'WECHAT_REFUND_NOTIFY_URL',
+      data.NODE_ENV
+    );
+
     return {
       nodeEnv: data.NODE_ENV,
       port: data.PORT,
       host: data.HOST,
-      baseUrl: data.BASE_URL.replace(/\/+$/, ''),
+      baseUrl,
       databaseUrl: data.DATABASE_URL,
       jwtSecret: data.JWT_SECRET,
       jwtExpiresIn: data.JWT_EXPIRES_IN,
@@ -117,8 +145,8 @@ export function loadConfig(sourceEnv: NodeJS.ProcessEnv = process.env): AppConfi
           data.WECHAT_PLATFORM_PUBLIC_KEY_PATH,
           'WECHAT_PLATFORM_PUBLIC_KEY_PATH'
         ),
-        payNotifyUrl: requireNonEmpty(data.WECHAT_PAY_NOTIFY_URL, 'WECHAT_PAY_NOTIFY_URL'),
-        refundNotifyUrl: requireNonEmpty(data.WECHAT_REFUND_NOTIFY_URL, 'WECHAT_REFUND_NOTIFY_URL')
+        payNotifyUrl,
+        refundNotifyUrl
       }
     };
   }
@@ -127,7 +155,7 @@ export function loadConfig(sourceEnv: NodeJS.ProcessEnv = process.env): AppConfi
     nodeEnv: data.NODE_ENV,
     port: data.PORT,
     host: data.HOST,
-    baseUrl: data.BASE_URL.replace(/\/+$/, ''),
+    baseUrl,
     databaseUrl: data.DATABASE_URL,
     jwtSecret: data.JWT_SECRET,
     jwtExpiresIn: data.JWT_EXPIRES_IN,

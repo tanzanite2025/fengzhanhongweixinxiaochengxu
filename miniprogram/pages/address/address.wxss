@@ -79,6 +79,17 @@
   margin-bottom: 16rpx;
 }
 
+.region-picker {
+  display: flex;
+  align-items: center;
+  font-size: 28rpx;
+  color: #111827;
+}
+
+.region-placeholder {
+  color: #9ca3af;
+}
+
 .switch-row {
   display: flex;
   justify-content: space-between;

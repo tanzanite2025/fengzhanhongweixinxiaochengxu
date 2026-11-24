@@ -3,9 +3,10 @@ import { adminFetch } from '../lib/api';
 
 interface ChangePasswordModalProps {
   onClose: () => void;
+  onPasswordChanged: () => void;
 }
 
-export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
+export function ChangePasswordModal({ onClose, onPasswordChanged }: ChangePasswordModalProps) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -54,7 +55,7 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
         )}
         {success && (
           <div className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-700">
-            密码修改成功，请妥善保管新密码。
+            密码修改成功，旧登录凭证已失效，请使用新密码重新登录。
           </div>
         )}
 
@@ -89,10 +90,10 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
         <div className="flex justify-end gap-3 pt-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={success ? onPasswordChanged : onClose}
             className="rounded-full h-11 px-5 text-xs font-bold cursor-pointer"
           >
-            {success ? '关闭' : '取消'}
+            {success ? '重新登录' : '取消'}
           </button>
           {!success && (
             <button

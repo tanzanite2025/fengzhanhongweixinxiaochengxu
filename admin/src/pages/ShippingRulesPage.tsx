@@ -56,12 +56,27 @@ export function ShippingRulesPage() {
         .map((s) => s.trim())
         .filter(Boolean);
 
+      const baseCents = Math.round(Number(baseYuan) * 100);
+      const extraCents = Math.round(Number(extraYuan) * 100);
+      const freeCents = freeYuan.trim() ? Math.round(Number(freeYuan) * 100) : null;
+
+      if (
+        !Number.isFinite(baseCents) ||
+        baseCents < 0 ||
+        !Number.isFinite(extraCents) ||
+        extraCents < 0 ||
+        (freeCents !== null && (!Number.isFinite(freeCents) || freeCents < 0))
+      ) {
+        setError('运费和满额包邮门槛必须为非负有效数字');
+        return;
+      }
+
       const payload = {
         name: name.trim(),
         isDefault,
-        baseFeeCents: Math.round(Number(baseYuan) * 100),
-        extraItemFeeCents: Math.round(Number(extraYuan) * 100),
-        freeThresholdCents: freeYuan.trim() ? Math.round(Number(freeYuan) * 100) : null,
+        baseFeeCents: baseCents,
+        extraItemFeeCents: extraCents,
+        freeThresholdCents: freeCents,
         excludedProvinces: excluded
       };
 
@@ -240,7 +255,9 @@ export function ShippingRulesPage() {
               </button>
               <button
                 onClick={() => handleDelete(r)}
-                className="rounded-full h-10 px-4 border border-rose-200 text-xs font-bold text-rose-600 cursor-pointer"
+                disabled={r.isDefault}
+                title={r.isDefault ? '默认运费模板不可直接删除，请先将其他模板设为默认' : '删除运费模板'}
+                className="rounded-full h-10 px-4 border border-rose-200 text-xs font-bold text-rose-600 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 删除
               </button>

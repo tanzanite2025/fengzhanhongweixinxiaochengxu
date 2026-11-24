@@ -11,6 +11,7 @@ export function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [error, setError] = useState('');
   const [shippingOrderId, setShippingOrderId] = useState<number | null>(null);
+  const [shippingModalMode, setShippingModalMode] = useState<'ship' | 'update'>('ship');
   const [expressCode, setExpressCode] = useState('SF');
   const [trackingNo, setTrackingNo] = useState('');
 
@@ -35,28 +36,59 @@ export function OrdersPage() {
     loadOrders(statusFilter, page);
   }, [statusFilter, page]);
 
+  const openShippingModal = (order: AdminOrder, mode: 'ship' | 'update') => {
+    setError('');
+    setShippingModalMode(mode);
+    setShippingOrderId(order.id);
+    setExpressCode(order.expressCompanyCode ?? 'SF');
+    setTrackingNo(order.trackingNumber ?? '');
+  };
+
   const handleShipSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!shippingOrderId) return;
+    const trimmedTracking = trackingNo.trim();
+    if (trimmedTracking.length < 5 || /\s/.test(trimmedTracking)) {
+      setError('请输入至少5位且不含空格的快递单号');
+      return;
+    }
+
     setError('');
+    const endpoint =
+      shippingModalMode === 'update'
+        ? `/api/admin/orders/${shippingOrderId}/update-shipping`
+        : `/api/admin/orders/${shippingOrderId}/ship`;
     try {
-      const updated = await adminFetch<AdminOrder>(`/api/admin/orders/${shippingOrderId}/ship`, {
+      const updated = await adminFetch<AdminOrder>(endpoint, {
         method: 'POST',
         body: JSON.stringify({
           expressCompanyCode: expressCode,
-          trackingNumber: trackingNo
+          trackingNumber: trimmedTracking
         })
       });
       if (updated.wechatShippingSyncStatus === 'FAILED') {
         setError(
-          `订单已标记发货，但同步微信发货管理失败（请检查配置后重试）：${updated.wechatShippingSyncError ?? '未知错误'}`
+          `物流单号已保存，但同步微信发货管理失败（请检查配置后重试）：${updated.wechatShippingSyncError ?? '未知错误'}`
         );
       }
       setShippingOrderId(null);
       setTrackingNo('');
       await loadOrders();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '发货失败');
+      setError(err instanceof Error ? err.message : '操作失败');
+    }
+  };
+
+  const handleRetryAbnormalRefund = async (orderId: number) => {
+    if (!window.confirm('确认重新调用微信退款接口退回该异常付款订单的货款吗？')) return;
+    setError('');
+    try {
+      await adminFetch<AdminOrder>(`/api/admin/orders/${orderId}/retry-abnormal-refund`, {
+        method: 'POST'
+      });
+      await loadOrders();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '异常退款重试失败');
     }
   };
 
@@ -184,10 +216,18 @@ export function OrdersPage() {
             <div className="flex justify-end gap-2 pt-2">
               {order.status === 'PENDING_SHIPMENT' && (
                 <button
-                  onClick={() => setShippingOrderId(order.id)}
+                  onClick={() => openShippingModal(order, 'ship')}
                   className="rounded-full h-11 px-6 bg-slate-900 text-white font-bold text-xs cursor-pointer"
                 >
                   录入物流并发货
+                </button>
+              )}
+              {order.status === 'SHIPPED' && (
+                <button
+                  onClick={() => openShippingModal(order, 'update')}
+                  className="rounded-full h-11 px-5 border border-slate-300 font-bold text-xs cursor-pointer"
+                >
+                  修改物流单号
                 </button>
               )}
               {order.wechatShippingSyncStatus === 'FAILED' && (
@@ -198,6 +238,15 @@ export function OrdersPage() {
                   重试同步微信发货
                 </button>
               )}
+              {order.status === 'CANCELLED' &&
+                order.abnormalPayStatus === 'MANUAL_REFUND_REQUIRED' && (
+                  <button
+                    onClick={() => handleRetryAbnormalRefund(order.id)}
+                    className="rounded-full h-11 px-6 bg-rose-600 text-white font-bold text-xs cursor-pointer"
+                  >
+                    重试异常退款
+                  </button>
+                )}
             </div>
           </div>
         ))}
@@ -232,7 +281,9 @@ export function OrdersPage() {
             onSubmit={handleShipSubmit}
             className="w-full max-w-md rounded-[32px] bg-white p-8 shadow-2xl space-y-4"
           >
-            <h2 className="text-sm font-black">录入快递单号</h2>
+            <h2 className="text-sm font-black">
+              {shippingModalMode === 'update' ? '修改物流单号并重推微信' : '录入快递单号'}
+            </h2>
             <select
               value={expressCode}
               onChange={(e) => setExpressCode(e.target.value)}
@@ -263,7 +314,7 @@ export function OrdersPage() {
                 type="submit"
                 className="rounded-full h-11 px-6 bg-slate-900 text-white font-bold text-xs cursor-pointer"
               >
-                确认发货并同步微信
+                {shippingModalMode === 'update' ? '保存并重推微信' : '确认发货并同步微信'}
               </button>
             </div>
           </form>

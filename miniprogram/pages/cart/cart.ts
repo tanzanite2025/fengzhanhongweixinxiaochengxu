@@ -73,8 +73,14 @@ Page({
     const delta = Number(e.currentTarget.dataset.delta);
     const item = this.data.items.find((i) => i.id === id);
     if (!item) return;
-    const nextQty = item.quantity + delta;
+    let nextQty = item.quantity + delta;
     if (nextQty < 1) return;
+    if (delta < 0 && item.sku.stock > 0 && nextQty > item.sku.stock) {
+      nextQty = item.sku.stock;
+    }
+    if (nextQty > 99) {
+      nextQty = 99;
+    }
 
     try {
       await apiRequest({

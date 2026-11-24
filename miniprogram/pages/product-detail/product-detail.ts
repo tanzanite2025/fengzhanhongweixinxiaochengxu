@@ -96,7 +96,8 @@ Page({
   onChangeQty(e: WechatMiniprogram.TouchEvent) {
     const delta = Number(e.currentTarget.dataset.delta);
     const maxStock = this.data.selectedSku?.stock ?? 1;
-    const next = Math.max(1, Math.min(maxStock, this.data.quantity + delta));
+    const maxAllowed = Math.max(1, Math.min(99, maxStock));
+    const next = Math.max(1, Math.min(maxAllowed, this.data.quantity + delta));
     this.setData({ quantity: next });
   },
 

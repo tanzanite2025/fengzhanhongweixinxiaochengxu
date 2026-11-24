@@ -31,9 +31,11 @@
       <view class="form-title">{{editingId > 0 ? '编辑收货地址' : '新增收货地址'}}</view>
       <input class="form-input" placeholder="收货人姓名" value="{{receiverName}}" data-field="receiverName" bindinput="onInputField" />
       <input class="form-input" placeholder="11位手机号" type="number" value="{{receiverPhone}}" data-field="receiverPhone" bindinput="onInputField" />
-      <input class="form-input" placeholder="省份（如：广东省）" value="{{province}}" data-field="province" bindinput="onInputField" />
-      <input class="form-input" placeholder="城市（如：深圳市）" value="{{city}}" data-field="city" bindinput="onInputField" />
-      <input class="form-input" placeholder="区/县（如：南山区）" value="{{district}}" data-field="district" bindinput="onInputField" />
+      <picker mode="region" value="{{regionValue}}" bindchange="onRegionChange">
+        <view class="form-input region-picker {{province ? '' : 'region-placeholder'}}">
+          {{province ? province + ' ' + city + ' ' + district : '请选择省 / 市 / 区县'}}
+        </view>
+      </picker>
       <input class="form-input" placeholder="详细街道门牌号" value="{{detailAddress}}" data-field="detailAddress" bindinput="onInputField" />
       <view class="switch-row">
         <text>设为默认地址</text>

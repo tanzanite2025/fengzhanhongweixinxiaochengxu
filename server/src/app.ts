@@ -72,7 +72,10 @@ export async function buildApp(options: BuildAppOptions): Promise<{
 
   await app.register(fastifyStatic, {
     root: uploadDir,
-    prefix: '/uploads/'
+    prefix: '/uploads/',
+    setHeaders(res) {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
   });
 
   app.setErrorHandler((error, _request, reply) => {

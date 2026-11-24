@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { adminFetch, setAdminToken } from '../lib/api';
 
 interface LoginPageProps {
+  notice?: string;
   onSuccess: () => void;
 }
 
-export function LoginPage({ onSuccess }: LoginPageProps) {
+export function LoginPage({ notice, onSuccess }: LoginPageProps) {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -43,9 +44,9 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
           企业微信自研商城 · 商家管理控制台
         </p>
 
-        {error && (
+        {(error || notice) && (
           <div className="mb-4 rounded-2xl bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-600">
-            {error}
+            {error || notice}
           </div>
         )}
 
@@ -70,7 +71,7 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="默认种子密码 Admin@2026!"
+              placeholder="请输入管理员密码"
               className="w-full h-12 rounded-2xl border-none bg-slate-100 px-4 text-sm outline-none focus:ring-2 focus:ring-slate-900"
               required
             />

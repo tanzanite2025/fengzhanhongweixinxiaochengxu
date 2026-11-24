@@ -13,10 +13,15 @@ let pendingLoginPromise: Promise<string> | null = null;
 /**
  * Perform WeChat login strictly exchanging wx.login code for { token, userId }.
  */
-export async function ensureLogin(): Promise<string> {
-  const existing = wx.getStorageSync(TOKEN_STORAGE_KEY) as string | undefined;
-  if (existing && existing.length > 0) {
-    return existing;
+export async function ensureLogin(forceRefresh = false): Promise<string> {
+  if (!forceRefresh) {
+    const existing = wx.getStorageSync(TOKEN_STORAGE_KEY) as string | undefined;
+    if (existing && existing.length > 0) {
+      return existing;
+    }
+  } else {
+    wx.removeStorageSync(TOKEN_STORAGE_KEY);
+    wx.removeStorageSync(USER_ID_STORAGE_KEY);
   }
 
   if (pendingLoginPromise) {
@@ -107,8 +112,7 @@ export async function apiRequest<T>(options: RequestOptions): Promise<T> {
   let response = await execute(token);
 
   if (response.statusCode === 401 && requireAuth) {
-    wx.removeStorageSync(TOKEN_STORAGE_KEY);
-    token = await ensureLogin();
+    token = await ensureLogin(true);
     response = await execute(token);
   }
 

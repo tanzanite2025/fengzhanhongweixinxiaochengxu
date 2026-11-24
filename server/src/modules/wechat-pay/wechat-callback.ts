@@ -23,7 +23,7 @@ const callbackEnvelopeSchema = z.object({
 export function verifyAndDecryptWechatCallback<T>(
   request: FastifyRequest,
   wechatPay: WechatPayService,
-  expectedEventType: string
+  expectedEventTypes: string | string[]
 ): { eventType: string; payload: T | null } {
   if (typeof request.rawBody !== 'string' || request.rawBody.length === 0) {
     throw new CriticalError('rawBody missing for WeChat Pay V3 callback signature verification');
@@ -40,7 +40,8 @@ export function verifyAndDecryptWechatCallback<T>(
   );
 
   const envelope = callbackEnvelopeSchema.parse(request.body);
-  if (envelope.event_type !== expectedEventType) {
+  const allowed = Array.isArray(expectedEventTypes) ? expectedEventTypes : [expectedEventTypes];
+  if (!allowed.includes(envelope.event_type)) {
     return { eventType: envelope.event_type, payload: null };
   }
 

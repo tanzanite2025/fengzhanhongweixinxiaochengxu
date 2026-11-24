@@ -27,18 +27,28 @@ const skuInputSchema = z.object({
   isActive: z.boolean().default(true)
 });
 
-const productBody = z.object({
-  categoryId: z.number().int().positive(),
-  shippingRuleId: z.number().int().positive(),
-  title: z.string().min(1).max(120),
-  subtitle: z.string().max(200).nullable().optional(),
-  coverUrl: z.string().min(1),
-  galleryUrls: z.array(z.string().min(1)).default([]),
-  descriptionHtml: z.string().default(''),
-  status: z.enum(['ON_SALE', 'OFF_SALE']).default('ON_SALE'),
-  sortOrder: z.number().int().default(0),
-  skus: z.array(skuInputSchema).min(1, '至少需要配置一个 SKU 规格')
-});
+const productBody = z
+  .object({
+    categoryId: z.number().int().positive(),
+    shippingRuleId: z.number().int().positive(),
+    title: z.string().min(1).max(120),
+    subtitle: z.string().max(200).nullable().optional(),
+    coverUrl: z.string().min(1),
+    galleryUrls: z.array(z.string().min(1)).default([]),
+    descriptionHtml: z.string().default(''),
+    status: z.enum(['ON_SALE', 'OFF_SALE']).default('ON_SALE'),
+    sortOrder: z.number().int().default(0),
+    skus: z.array(skuInputSchema).min(1, '至少需要配置一个 SKU 规格')
+  })
+  .superRefine((data, ctx) => {
+    if (data.status === 'ON_SALE' && !data.skus.some((s) => s.isActive)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['skus'],
+        message: '上架商品至少需要启用一个 SKU 规格'
+      });
+    }
+  });
 
 function formatProduct(product: {
   id: number;
@@ -121,6 +131,8 @@ export function registerProductRoutes(
 
     const where = {
       status: 'ON_SALE',
+      category: { isActive: true },
+      skus: { some: { isActive: true } },
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.keyword && query.keyword.trim().length > 0
         ? {
@@ -158,7 +170,12 @@ export function registerProductRoutes(
   app.get('/api/products/:id', async (request) => {
     const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params);
     const product = await prisma.product.findFirst({
-      where: { id: params.id, status: 'ON_SALE' },
+      where: {
+        id: params.id,
+        status: 'ON_SALE',
+        category: { isActive: true },
+        skus: { some: { isActive: true } }
+      },
       include: {
         category: { select: { id: true, name: true } },
         shippingRule: true,
@@ -223,6 +240,28 @@ export function registerProductRoutes(
     }
   );
 
+  // Admin: products metadata options (decoupled from shipping:manage / categories:manage permissions)
+  app.get(
+    '/api/admin/products/meta',
+    { preHandler: authService.requireAdminPermission('products:manage') },
+    async () => {
+      const [categories, shippingRules] = await Promise.all([
+        prisma.category.findMany({ orderBy: [{ sortOrder: 'desc' }, { id: 'asc' }] }),
+        prisma.shippingRule.findMany({ orderBy: { id: 'asc' } })
+      ]);
+      return {
+        categories,
+        shippingRules: shippingRules.map((r) => ({
+          ...r,
+          excludedProvinces: parseStringArrayJson(
+            r.excludedProvinces,
+            `ShippingRule(${r.id}).excludedProvinces`
+          )
+        }))
+      };
+    }
+  );
+
   // Admin: products CRUD
   app.get(
     '/api/admin/products',
@@ -240,17 +279,21 @@ export function registerProductRoutes(
     }
   );
 
+  const assertRefsExist = async (categoryId: number, shippingRuleId: number) => {
+    const [category, shippingRule] = await Promise.all([
+      prisma.category.findUnique({ where: { id: categoryId } }),
+      prisma.shippingRule.findUnique({ where: { id: shippingRuleId } })
+    ]);
+    if (!category) throw new AppError(400, 'CATEGORY_NOT_FOUND', '所选商品分类不存在');
+    if (!shippingRule) throw new AppError(400, 'SHIPPING_RULE_NOT_FOUND', '所选运费模板不存在');
+  };
+
   app.post(
     '/api/admin/products',
     { preHandler: authService.requireAdminPermission('products:manage') },
     async (request, reply) => {
       const body = productBody.parse(request.body);
-      const [category, shippingRule] = await Promise.all([
-        prisma.category.findUnique({ where: { id: body.categoryId } }),
-        prisma.shippingRule.findUnique({ where: { id: body.shippingRuleId } })
-      ]);
-      if (!category) throw new AppError(400, 'CATEGORY_NOT_FOUND', '所选商品分类不存在');
-      if (!shippingRule) throw new AppError(400, 'SHIPPING_RULE_NOT_FOUND', '所选运费模板不存在');
+      await assertRefsExist(body.categoryId, body.shippingRuleId);
 
       const created = await prisma.product.create({
         data: {
@@ -300,6 +343,7 @@ export function registerProductRoutes(
       if (!existing) {
         throw new AppError(404, 'PRODUCT_NOT_FOUND', '商品不存在');
       }
+      await assertRefsExist(body.categoryId, body.shippingRuleId);
 
       const existingSkuIds = new Set(existing.skus.map((s) => s.id));
       for (const sku of body.skus) {

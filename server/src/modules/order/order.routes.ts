@@ -30,8 +30,13 @@ const createOrderBody = z.object({
 });
 
 const shipOrderBody = z.object({
-  expressCompanyCode: z.string().min(1),
-  trackingNumber: z.string().min(5).max(64)
+  expressCompanyCode: z.string().trim().min(1, '请选择快递公司'),
+  trackingNumber: z
+    .string()
+    .trim()
+    .min(5, '快递单号至少5位')
+    .max(64, '快递单号过长')
+    .refine((val) => !/\s/.test(val), '快递单号不能包含空格或换行')
 });
 
 /**
@@ -89,7 +94,7 @@ export function registerOrderRoutes(
       }
       if (order.status === 'PENDING_PAYMENT' && config.wechatMode === 'live') {
         const payRes = await wechatPay.queryOrderByOutTradeNo(order.orderNo);
-        if (payRes.trade_state === 'SUCCESS') {
+        if (payRes && payRes.trade_state === 'SUCCESS') {
           return orderService.markOrderPaid(
             payRes.out_trade_no,
             payRes.transaction_id,
@@ -280,6 +285,17 @@ export function registerOrderRoutes(
     }
   );
 
+  // Admin: update shipping tracking info for SHIPPED order & re-upload to WeChat
+  app.post(
+    '/api/admin/orders/:id/update-shipping',
+    { preHandler: authService.requireAdminPermission('orders:manage') },
+    async (request) => {
+      const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params);
+      const body = shipOrderBody.parse(request.body);
+      return orderService.updateOrderShipping(params.id, body.expressCompanyCode, body.trackingNumber);
+    }
+  );
+
   // Admin: retry WeChat shipping sync
   app.post(
     '/api/admin/orders/:id/retry-wechat-shipping',
@@ -287,6 +303,16 @@ export function registerOrderRoutes(
     async (request) => {
       const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params);
       return orderService.syncWechatShippingForOrder(params.id);
+    }
+  );
+
+  // Admin: retry refund for CANCELLED order with MANUAL_REFUND_REQUIRED
+  app.post(
+    '/api/admin/orders/:id/retry-abnormal-refund',
+    { preHandler: authService.requireAdminPermission('orders:manage') },
+    async (request) => {
+      const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params);
+      return orderService.retryAbnormalRefund(params.id);
     }
   );
 

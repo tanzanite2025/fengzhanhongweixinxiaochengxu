@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { AppConfig } from '../../config/env.js';
 import { AppError, CriticalError } from '../../lib/errors.js';
 import { calculateShippingFee } from '../shipping/shipping.service.js';
-import { WechatPayService } from '../wechat-pay/wechat-pay.service.js';
+import { type JsapiPayClientParams, WechatPayService } from '../wechat-pay/wechat-pay.service.js';
 import { WechatShippingService } from '../wechat-shipping/wechat-shipping.service.js';
 
 export interface OrderLineInput {
@@ -36,6 +36,11 @@ function generateOrderNo(prefix: string): string {
  * payment reconciliation, expiry cancellation, shipping sync, and refund state machine.
  */
 export class OrderService {
+  private readonly inFlightPrepayByOrderId = new Map<
+    number,
+    Promise<{ prepayId: string; payParams: JsapiPayClientParams }>
+  >();
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly config: AppConfig,
@@ -228,18 +233,36 @@ export class OrderService {
     const description =
       order.items.length > 1 ? `${firstTitle} 等 ${order.items.length} 件商品` : firstTitle;
 
-    const prepay = await this.wechatPay.createJsapiPrepay({
-      outTradeNo: order.orderNo,
-      description,
-      totalAmountCents: order.totalAmountCents,
-      openId: order.user.openId
-    });
+    // Coalesce concurrent prepay calls for the same order so differing second-level time_expire values never collide
+    let prepayPromise = this.inFlightPrepayByOrderId.get(order.id);
+    if (!prepayPromise) {
+      // WeChat Pay V3 requires time_expire to be at least ~1 minute in the future
+      const minExpireMs = Date.now() + 90_000;
+      const effectiveExpire = new Date(Math.max(order.expireAt.getTime(), minExpireMs));
 
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { wechatPrepayId: prepay.prepayId }
-    });
+      prepayPromise = this.wechatPay
+        .createJsapiPrepay({
+          outTradeNo: order.orderNo,
+          description,
+          totalAmountCents: order.totalAmountCents,
+          openId: order.user.openId,
+          timeExpire: effectiveExpire
+        })
+        .then(async (prepay) => {
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { wechatPrepayId: prepay.prepayId }
+          });
+          return prepay;
+        })
+        .finally(() => {
+          this.inFlightPrepayByOrderId.delete(order.id);
+        });
 
+      this.inFlightPrepayByOrderId.set(order.id, prepayPromise);
+    }
+
+    const prepay = await prepayPromise;
     return {
       orderNo: order.orderNo,
       totalAmountCents: order.totalAmountCents,
@@ -278,7 +301,7 @@ export class OrderService {
     }
 
     const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
+    const txOutcome = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.order.updateMany({
         where: { id: order.id, status: 'PENDING_PAYMENT' },
         data: {
@@ -289,7 +312,11 @@ export class OrderService {
       });
 
       if (updated.count === 0) {
-        return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
+        const latest = await tx.order.findUniqueOrThrow({
+          where: { id: order.id },
+          include: { items: true }
+        });
+        return { kind: 'RACE' as const, latest };
       }
 
       await tx.paymentRecord.update({
@@ -309,13 +336,34 @@ export class OrderService {
         });
       }
 
-      return tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { items: true } });
+      const settled = await tx.order.findUniqueOrThrow({
+        where: { id: order.id },
+        include: { items: true }
+      });
+      return { kind: 'PAID' as const, order: settled };
     });
+
+    if (txOutcome.kind === 'RACE') {
+      if (txOutcome.latest.status === 'CANCELLED') {
+        return this.handlePaidAfterCancel(
+          txOutcome.latest.id,
+          txOutcome.latest.orderNo,
+          txOutcome.latest.totalAmountCents,
+          txOutcome.latest.abnormalPayStatus,
+          transactionId,
+          paidAmountCents,
+          rawCallbackJson
+        );
+      }
+      return txOutcome.latest;
+    }
+
+    return txOutcome.order;
   }
 
   /**
    * Reconcile the rare race condition where a buyer completes payment right as an expired order is closed.
-   * Records abnormal payment state and attempts automatic WeChat refund so callback retries cease safely.
+   * Uses an atomic claim lock on abnormalPayStatus so concurrent callbacks cannot trigger duplicate refunds.
    */
   private async handlePaidAfterCancel(
     orderId: number,
@@ -327,6 +375,14 @@ export class OrderService {
     rawCallbackJson: string
   ) {
     if (currentAbnormalStatus !== 'NONE') {
+      return this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } });
+    }
+
+    const claim = await this.prisma.order.updateMany({
+      where: { id: orderId, status: 'CANCELLED', abnormalPayStatus: 'NONE' },
+      data: { abnormalPayStatus: 'AUTO_REFUNDING' }
+    });
+    if (claim.count !== 1) {
       return this.prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true } });
     }
 
@@ -371,9 +427,72 @@ export class OrderService {
   }
 
   /**
+   * Admin manual retry for orders stuck in MANUAL_REFUND_REQUIRED after paid-after-cancel failure.
+   */
+  public async retryAbnormalRefund(orderId: number) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true }
+    });
+    if (!order) {
+      throw new AppError(404, 'ORDER_NOT_FOUND', '订单不存在');
+    }
+    if (order.status !== 'CANCELLED' || order.abnormalPayStatus !== 'MANUAL_REFUND_REQUIRED') {
+      throw new AppError(400, 'INVALID_ORDER_STATUS', '当前订单无需重试异常退款');
+    }
+
+    const claim = await this.prisma.order.updateMany({
+      where: {
+        id: order.id,
+        status: 'CANCELLED',
+        abnormalPayStatus: 'MANUAL_REFUND_REQUIRED'
+      },
+      data: { abnormalPayStatus: 'AUTO_REFUNDING' }
+    });
+    if (claim.count !== 1) {
+      throw new AppError(409, 'ORDER_STATUS_CHANGED', '异常退款正在处理中或状态已变更');
+    }
+
+    const outRefundNo = `RF_ABN_${order.orderNo}_${Date.now().toString(36).toUpperCase()}`;
+    try {
+      const refundRes = await this.wechatPay.createRefund({
+        outTradeNo: order.orderNo,
+        outRefundNo,
+        refundAmountCents: order.totalAmountCents,
+        totalAmountCents: order.totalAmountCents,
+        reason: '关单后付款人工重试原路退回'
+      });
+
+      return this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          abnormalPayStatus: 'AUTO_REFUNDED',
+          abnormalPayNote: `重试异常退款成功(${outRefundNo} / ${refundRes.refundId})`
+        },
+        include: { items: true }
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          abnormalPayStatus: 'MANUAL_REFUND_REQUIRED',
+          abnormalPayNote: `重试异常退款失败(${outRefundNo}): ${msg}`
+        }
+      });
+      throw err;
+    }
+  }
+
+  /**
    * Cancel a PENDING_PAYMENT order and atomically restore all locked SKU stock.
    */
-  public async cancelOrderAndRestoreStock(orderId: number, reason: string, expectedUserId?: number) {
+  public async cancelOrderAndRestoreStock(
+    orderId: number,
+    reason: string,
+    expectedUserId?: number,
+    options?: { skipWechatQuery?: boolean }
+  ) {
     const order = await this.prisma.order.findFirst({
       where: {
         id: orderId,
@@ -386,6 +505,22 @@ export class OrderService {
     }
     if (order.status !== 'PENDING_PAYMENT') {
       throw new AppError(400, 'CANNOT_CANCEL_ORDER', '仅待付款订单支持取消');
+    }
+
+    if (this.config.wechatMode === 'live' && order.wechatPrepayId) {
+      if (!options?.skipWechatQuery) {
+        const payRes = await this.wechatPay.queryOrderByOutTradeNo(order.orderNo);
+        if (payRes && payRes.trade_state === 'SUCCESS') {
+          await this.markOrderPaid(
+            payRes.out_trade_no,
+            payRes.transaction_id,
+            payRes.amount.total,
+            JSON.stringify(payRes)
+          );
+          throw new AppError(409, 'ORDER_ALREADY_PAID', '该订单已完成微信支付，无法取消，请刷新后申请退款');
+        }
+      }
+      await this.wechatPay.closeOrder(order.orderNo);
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -435,7 +570,7 @@ export class OrderService {
       try {
         if (this.config.wechatMode === 'live' && item.wechatPrepayId) {
           const payRes = await this.wechatPay.queryOrderByOutTradeNo(item.orderNo);
-          if (payRes.trade_state === 'SUCCESS') {
+          if (payRes && payRes.trade_state === 'SUCCESS') {
             await this.markOrderPaid(
               payRes.out_trade_no,
               payRes.transaction_id,
@@ -444,37 +579,50 @@ export class OrderService {
             );
             continue;
           }
-          if (payRes.trade_state === 'USERPAYING') {
+          if (payRes && payRes.trade_state === 'USERPAYING') {
             continue;
           }
         }
 
-        await this.cancelOrderAndRestoreStock(item.id, '超时未支付自动关闭');
+        await this.cancelOrderAndRestoreStock(item.id, '超时未支付自动关闭', undefined, {
+          skipWechatQuery: true
+        });
         cancelledCount += 1;
       } catch (err) {
         // Ignore only race condition where user paid or cancelled concurrently
         if (err instanceof AppError && err.code === 'ORDER_STATUS_CHANGED') {
           continue;
         }
-        throw err;
+        // Isolate single-order failures so remaining expired orders still release stock
+        console.error(`[CRITICAL] Failed to cancel expired order ${item.orderNo}:`, err);
       }
     }
     return cancelledCount;
   }
 
+  private validateShippingInput(expressCompanyCode: string, trackingNumber: string) {
+    const code = expressCompanyCode.trim();
+    const expressCompanyName = this.wechatShipping.resolveExpressName(code);
+    const trimmedTracking = trackingNumber.trim();
+    if (trimmedTracking.length < 5 || trimmedTracking.length > 64 || /\s/.test(trimmedTracking)) {
+      throw new AppError(400, 'INVALID_TRACKING_NUMBER', '请输入5-64位有效快递单号（不能包含空格）');
+    }
+    return {
+      expressCompanyCode: code,
+      expressCompanyName,
+      trackingNumber: trimmedTracking
+    };
+  }
+
   /**
-   * Ship a PENDING_SHIPMENT order and push logistics to WeChat Shipping Management API.
+   * Ship a PENDING_SHIPMENT order atomically and push logistics to WeChat Shipping Management API.
    */
   public async shipOrder(orderId: number, expressCompanyCode: string, trackingNumber: string) {
-    const expressCompanyName = this.wechatShipping.resolveExpressName(expressCompanyCode);
-    const trimmedTracking = trackingNumber.trim();
-    if (trimmedTracking.length < 5) {
-      throw new AppError(400, 'INVALID_TRACKING_NUMBER', '请输入有效的快递单号');
-    }
+    const shipping = this.validateShippingInput(expressCompanyCode, trackingNumber);
 
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { user: true, items: true }
+      select: { id: true, status: true }
     });
     if (!order) {
       throw new AppError(404, 'ORDER_NOT_FOUND', '订单不存在');
@@ -483,21 +631,58 @@ export class OrderService {
       throw new AppError(400, 'INVALID_ORDER_STATUS', '仅待发货订单可执行发货');
     }
 
-    const now = new Date();
-    await this.prisma.order.update({
-      where: { id: order.id },
+    const updated = await this.prisma.order.updateMany({
+      where: { id: order.id, status: 'PENDING_SHIPMENT' },
       data: {
         status: 'SHIPPED',
-        expressCompanyCode,
-        expressCompanyName,
-        trackingNumber: trimmedTracking,
-        shippedAt: now,
+        expressCompanyCode: shipping.expressCompanyCode,
+        expressCompanyName: shipping.expressCompanyName,
+        trackingNumber: shipping.trackingNumber,
+        shippedAt: new Date(),
+        wechatShippingSyncStatus: 'PENDING',
+        wechatShippingSyncError: null
+      }
+    });
+    if (updated.count !== 1) {
+      throw new AppError(409, 'ORDER_STATUS_CHANGED', '订单状态已变更（可能买家已申请退款），无法发货');
+    }
+
+    return this.syncWechatShippingForOrder(order.id);
+  }
+
+  /**
+   * Update express company or tracking number for a SHIPPED order and re-sync WeChat Shipping API.
+   */
+  public async updateOrderShipping(
+    orderId: number,
+    expressCompanyCode: string,
+    trackingNumber: string
+  ) {
+    const shipping = this.validateShippingInput(expressCompanyCode, trackingNumber);
+
+    const updated = await this.prisma.order.updateMany({
+      where: { id: orderId, status: 'SHIPPED' },
+      data: {
+        expressCompanyCode: shipping.expressCompanyCode,
+        expressCompanyName: shipping.expressCompanyName,
+        trackingNumber: shipping.trackingNumber,
         wechatShippingSyncStatus: 'PENDING',
         wechatShippingSyncError: null
       }
     });
 
-    return this.syncWechatShippingForOrder(order.id);
+    if (updated.count === 0) {
+      const exists = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { id: true }
+      });
+      if (!exists) {
+        throw new AppError(404, 'ORDER_NOT_FOUND', '订单不存在');
+      }
+      throw new AppError(400, 'INVALID_ORDER_STATUS', '仅已发货订单支持修改物流单号');
+    }
+
+    return this.syncWechatShippingForOrder(orderId);
   }
 
   /**
@@ -524,6 +709,7 @@ export class OrderService {
         outTradeNo: order.orderNo,
         transactionId: order.wechatTransactionId,
         openId: order.user.openId,
+        receiverPhone: order.receiverPhone,
         expressCompanyCode: order.expressCompanyCode,
         trackingNumber: order.trackingNumber,
         itemDesc

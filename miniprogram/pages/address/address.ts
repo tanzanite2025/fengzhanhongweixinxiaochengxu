@@ -12,6 +12,7 @@ Page({
     province: '',
     city: '',
     district: '',
+    regionValue: ['广东省', '深圳市', '南山区'] as [string, string, string],
     detailAddress: '',
     isDefault: false
   },
@@ -86,6 +87,7 @@ Page({
       province: '',
       city: '',
       district: '',
+      regionValue: ['广东省', '深圳市', '南山区'] as [string, string, string],
       detailAddress: '',
       isDefault: this.data.addresses.length === 0
     });
@@ -103,6 +105,7 @@ Page({
       province: target.province,
       city: target.city,
       district: target.district,
+      regionValue: [target.province, target.city, target.district],
       detailAddress: target.detailAddress,
       isDefault: target.isDefault
     });
@@ -110,6 +113,16 @@ Page({
 
   closeForm() {
     this.setData({ showForm: false });
+  },
+
+  onRegionChange(e: WechatMiniprogram.PickerChange) {
+    const picked = e.detail.value as [string, string, string];
+    this.setData({
+      province: picked[0] ?? '',
+      city: picked[1] ?? '',
+      district: picked[2] ?? '',
+      regionValue: picked
+    });
   },
 
   onInputField(e: WechatMiniprogram.Input) {
@@ -132,6 +145,11 @@ Page({
       detailAddress,
       isDefault
     } = this.data;
+
+    if (!receiverName.trim() || !receiverPhone.trim() || !province.trim() || !city.trim() || !district.trim() || !detailAddress.trim()) {
+      wx.showToast({ title: '请完整填写收货信息并选择省市区', icon: 'none' });
+      return;
+    }
 
     try {
       if (editingId > 0) {

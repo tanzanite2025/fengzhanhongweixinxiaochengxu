@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
-import { adminFetch, clearAdminToken, getAdminToken } from './lib/api';
+import {
+  adminFetch,
+  clearAdminToken,
+  getAdminToken,
+  registerUnauthorizedHandler
+} from './lib/api';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AfterSalesPage } from './pages/AfterSalesPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -32,13 +37,30 @@ export function App() {
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [authError, setAuthError] = useState('');
+  const [sessionNotice, setSessionNotice] = useState('');
   const [showChangePwd, setShowChangePwd] = useState(false);
+
+  const logoutToLogin = (notice = '') => {
+    clearAdminToken();
+    setProfile(null);
+    setShowChangePwd(false);
+    setSessionNotice(notice);
+    setTokenReady(false);
+  };
+
+  useEffect(() => {
+    registerUnauthorizedHandler((msg) => {
+      logoutToLogin(msg);
+    });
+    return () => registerUnauthorizedHandler(null);
+  }, []);
 
   const fetchProfile = async () => {
     setAuthError('');
     try {
       const me = await adminFetch<AdminProfile>('/api/admin/auth/me');
       setProfile(me);
+      setSessionNotice('');
       const firstAllowed = NAV_ITEMS.find((item) => me.permissions.includes(item.requiredPerm));
       if (firstAllowed) {
         setActiveTab(firstAllowed.key);
@@ -57,7 +79,15 @@ export function App() {
   }, [tokenReady]);
 
   if (!tokenReady) {
-    return <LoginPage onSuccess={() => setTokenReady(true)} />;
+    return (
+      <LoginPage
+        notice={sessionNotice}
+        onSuccess={() => {
+          setSessionNotice('');
+          setTokenReady(true);
+        }}
+      />
+    );
   }
 
   if (authError) {
@@ -110,11 +140,7 @@ export function App() {
             修改密码
           </button>
           <button
-            onClick={() => {
-              clearAdminToken();
-              setProfile(null);
-              setTokenReady(false);
-            }}
+            onClick={() => logoutToLogin()}
             className="w-full rounded-full h-11 px-5 border border-dashed border-slate-300 text-xs font-bold text-slate-600 cursor-pointer"
           >
             退出登录
@@ -122,7 +148,12 @@ export function App() {
         </div>
       </aside>
 
-      {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+      {showChangePwd && (
+        <ChangePasswordModal
+          onClose={() => setShowChangePwd(false)}
+          onPasswordChanged={() => logoutToLogin('密码已修改，请使用新密码重新登录')}
+        />
+      )}
 
       <main className="flex-1 p-8 max-w-6xl">
         {activeTab === 'dashboard' && profile.permissions.includes('dashboard:view') && (

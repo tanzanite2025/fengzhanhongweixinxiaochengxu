@@ -82,6 +82,9 @@ export function registerCartRoutes(
       where: { userId_skuId: { userId: request.authUserId, skuId: body.skuId } }
     });
     const nextQty = (existing?.quantity ?? 0) + body.quantity;
+    if (nextQty > 99) {
+      throw new AppError(400, 'MAX_CART_QUANTITY', '单款商品购物车数量最多 99 件');
+    }
     if (nextQty > sku.stock) {
       throw new AppError(400, 'INSUFFICIENT_STOCK', `库存不足，当前最多可加购 ${sku.stock} 件`);
     }

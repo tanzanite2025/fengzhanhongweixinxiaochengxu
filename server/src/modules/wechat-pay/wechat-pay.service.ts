@@ -1,12 +1,16 @@
 import crypto from 'node:crypto';
 import type { AppConfig } from '../../config/env.js';
 import { AppError, CriticalError } from '../../lib/errors.js';
+import { formatBeijingRfc3339 } from '../../lib/time.js';
+
+export { formatBeijingRfc3339 as formatWechatRfc3339 };
 
 export interface JsapiPrepayInput {
   outTradeNo: string;
   description: string;
   totalAmountCents: number;
   openId: string;
+  timeExpire?: Date;
 }
 
 export interface JsapiPayClientParams {
@@ -66,6 +70,43 @@ export class WechatPayService {
       throw new CriticalError('WeChat Pay live credentials are not configured');
     }
     return this.config.wechat;
+  }
+
+  /**
+   * Unified WeChat Pay V3 HTTP client with 10s abort timeout and safe non-JSON gateway handling.
+   */
+  public async requestWechatPayJson<T>(
+    method: 'GET' | 'POST',
+    canonicalUrl: string,
+    payload?: unknown
+  ): Promise<{ status: number; ok: boolean; data: T | null }> {
+    const bodyJson = payload !== undefined ? JSON.stringify(payload) : '';
+    const authorization = this.buildAuthorizationHeader(method, canonicalUrl, bodyJson);
+
+    const response = await fetch(`https://api.mch.weixin.qq.com${canonicalUrl}`, {
+      method,
+      headers: {
+        ...(payload !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        Accept: 'application/json',
+        Authorization: authorization
+      },
+      ...(payload !== undefined ? { body: bodyJson } : {}),
+      signal: AbortSignal.timeout(10_000)
+    });
+
+    const rawText = await response.text();
+    if (rawText.trim().length === 0) {
+      return { status: response.status, ok: response.ok, data: null };
+    }
+
+    try {
+      const parsed = JSON.parse(rawText) as T;
+      return { status: response.status, ok: response.ok, data: parsed };
+    } catch {
+      throw new CriticalError(
+        `WeChat Pay returned non-JSON response (${response.status}): ${rawText.slice(0, 200)}`
+      );
+    }
   }
 
   /**
@@ -146,6 +187,7 @@ export class WechatPayService {
       mchid: wechat.mchId,
       description: input.description.slice(0, 127),
       out_trade_no: input.outTradeNo,
+      ...(input.timeExpire ? { time_expire: formatBeijingRfc3339(input.timeExpire) } : {}),
       notify_url: wechat.payNotifyUrl,
       amount: {
         total: input.totalAmountCents,
@@ -155,59 +197,76 @@ export class WechatPayService {
         openid: input.openId
       }
     };
-    const bodyJson = JSON.stringify(payload);
-    const authorization = this.buildAuthorizationHeader('POST', canonicalUrl, bodyJson);
 
-    const response = await fetch(`https://api.mch.weixin.qq.com${canonicalUrl}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: authorization
-      },
-      body: bodyJson
-    });
+    const res = await this.requestWechatPayJson<{
+      prepay_id?: string;
+      code?: string;
+      message?: string;
+    }>('POST', canonicalUrl, payload);
 
-    const resData = (await response.json()) as { prepay_id?: string; code?: string; message?: string };
-    if (!response.ok || !resData.prepay_id) {
+    if (!res.ok || !res.data?.prepay_id) {
       throw new CriticalError(
-        `WeChat Pay JSAPI prepay failed (${response.status}): ${resData.code ?? ''} ${resData.message ?? 'Unknown error'}`
+        `WeChat Pay JSAPI prepay failed (${res.status}): ${res.data?.code ?? ''} ${res.data?.message ?? 'Unknown error'}`
       );
     }
 
     return {
-      prepayId: resData.prepay_id,
-      payParams: this.buildMiniProgramPayParams(resData.prepay_id)
+      prepayId: res.data.prepay_id,
+      payParams: this.buildMiniProgramPayParams(res.data.prepay_id)
     };
   }
 
   /**
    * Query order payment status directly from WeChat Pay V3.
+   * Returns null if WeChat reports ORDERNOTEXIST (prepay was never created or already purged).
    */
-  public async queryOrderByOutTradeNo(outTradeNo: string): Promise<WechatPaySuccessPayload> {
+  public async queryOrderByOutTradeNo(outTradeNo: string): Promise<WechatPaySuccessPayload | null> {
     if (this.config.wechatMode === 'sandbox_mock') {
       throw new AppError(400, 'SANDBOX_QUERY_UNSUPPORTED', '沙箱模拟模式请通过模拟支付接口完成支付');
     }
 
     const wechat = this.requireLiveWechatConfig();
     const canonicalUrl = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(wechat.mchId)}`;
-    const authorization = this.buildAuthorizationHeader('GET', canonicalUrl, '');
+    const res = await this.requestWechatPayJson<
+      WechatPaySuccessPayload & { code?: string; message?: string }
+    >('GET', canonicalUrl);
 
-    const response = await fetch(`https://api.mch.weixin.qq.com${canonicalUrl}`, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        Authorization: authorization
-      }
-    });
-
-    const data = (await response.json()) as WechatPaySuccessPayload & { code?: string; message?: string };
-    if (!response.ok) {
+    if (res.status === 404 && res.data?.code === 'ORDERNOTEXIST') {
+      return null;
+    }
+    if (!res.ok || !res.data) {
       throw new CriticalError(
-        `WeChat Pay order query failed (${response.status}): ${data.code ?? ''} ${data.message ?? ''}`
+        `WeChat Pay order query failed (${res.status}): ${res.data?.code ?? ''} ${res.data?.message ?? ''}`
       );
     }
-    return data;
+    return res.data;
+  }
+
+  /**
+   * Close an unpaid WeChat Pay V3 order so its prepay_id cannot be paid after local cancellation.
+   */
+  public async closeOrder(outTradeNo: string): Promise<void> {
+    if (this.config.wechatMode === 'sandbox_mock') {
+      return;
+    }
+
+    const wechat = this.requireLiveWechatConfig();
+    const canonicalUrl = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}/close`;
+    const res = await this.requestWechatPayJson<{ code?: string; message?: string }>(
+      'POST',
+      canonicalUrl,
+      { mchid: wechat.mchId }
+    );
+
+    if (res.status === 204 || res.ok) {
+      return;
+    }
+    if (res.data?.code === 'ORDERNOTEXIST' || res.data?.code === 'ORDER_CLOSED') {
+      return;
+    }
+    throw new CriticalError(
+      `WeChat Pay closeOrder failed (${res.status}): ${res.data?.code ?? ''} ${res.data?.message ?? ''}`
+    );
   }
 
   /**
@@ -240,35 +299,57 @@ export class WechatPayService {
         currency: 'CNY'
       }
     };
-    const bodyJson = JSON.stringify(payload);
-    const authorization = this.buildAuthorizationHeader('POST', canonicalUrl, bodyJson);
 
-    const response = await fetch(`https://api.mch.weixin.qq.com${canonicalUrl}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: authorization
-      },
-      body: bodyJson
-    });
-
-    const data = (await response.json()) as {
+    const res = await this.requestWechatPayJson<{
       refund_id?: string;
       status?: string;
       code?: string;
       message?: string;
-    };
+    }>('POST', canonicalUrl, payload);
 
-    if (!response.ok || !data.refund_id || !data.status) {
+    if (!res.ok || !res.data?.refund_id || !res.data?.status) {
       throw new CriticalError(
-        `WeChat Pay refund failed (${response.status}): ${data.code ?? ''} ${data.message ?? ''}`
+        `WeChat Pay refund failed (${res.status}): ${res.data?.code ?? ''} ${res.data?.message ?? ''}`
       );
     }
 
     return {
-      refundId: data.refund_id,
-      status: data.status
+      refundId: res.data.refund_id,
+      status: res.data.status
+    };
+  }
+
+  /**
+   * Query an existing WeChat Pay V3 refund status by merchant out_refund_no.
+   */
+  public async queryRefundByOutRefundNo(
+    outRefundNo: string
+  ): Promise<{ refundId: string; status: string }> {
+    if (this.config.wechatMode === 'sandbox_mock') {
+      return {
+        refundId: `mock_refund_${outRefundNo}`,
+        status: 'SUCCESS'
+      };
+    }
+
+    this.requireLiveWechatConfig();
+    const canonicalUrl = `/v3/refund/domestic/refunds/${encodeURIComponent(outRefundNo)}`;
+    const res = await this.requestWechatPayJson<{
+      refund_id?: string;
+      status?: string;
+      code?: string;
+      message?: string;
+    }>('GET', canonicalUrl);
+
+    if (!res.ok || !res.data?.refund_id || !res.data?.status) {
+      throw new CriticalError(
+        `WeChat Pay queryRefund failed (${res.status}): ${res.data?.code ?? ''} ${res.data?.message ?? ''}`
+      );
+    }
+
+    return {
+      refundId: res.data.refund_id,
+      status: res.data.status
     };
   }
 

@@ -205,6 +205,32 @@ export function registerAuthRoutes(
       if (request.authAdmin?.id === params.id && !body.isActive) {
         throw new AppError(400, 'CANNOT_DISABLE_SELF', '不能禁用当前登录账号');
       }
+      if (
+        request.authAdmin?.id === params.id &&
+        !body.permissions.includes('admin_users:manage')
+      ) {
+        throw new AppError(400, 'CANNOT_REVOKE_OWN_ADMIN_PERM', '不能取消当前登录账号的角色权限矩阵权限');
+      }
+
+      const willRemainMatrixAdmin = body.isActive && body.permissions.includes('admin_users:manage');
+      if (!willRemainMatrixAdmin) {
+        const otherActiveAdmins = await prisma.adminUser.findMany({
+          where: { isActive: true, id: { not: params.id } },
+          select: { id: true, permissions: true }
+        });
+        const hasOtherMatrixAdmin = otherActiveAdmins.some((a) =>
+          parseStringArrayJson(a.permissions, `AdminUser(${a.id}).permissions`).includes(
+            'admin_users:manage'
+          )
+        );
+        if (!hasOtherMatrixAdmin) {
+          throw new AppError(
+            400,
+            'LAST_MATRIX_ADMIN_REQUIRED',
+            '系统必须保留至少一个活跃的权限矩阵管理员'
+          );
+        }
+      }
 
       const updated = await prisma.adminUser.update({
         where: { id: params.id },

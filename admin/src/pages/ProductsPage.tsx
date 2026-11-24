@@ -14,15 +14,15 @@ export function ProductsPage({ canManageCategories }: { canManageCategories: boo
   const loadAll = async () => {
     setError('');
     try {
-      const catEndpoint = canManageCategories ? '/api/admin/categories' : '/api/categories';
-      const [prods, cats, rules] = await Promise.all([
+      const [prods, meta] = await Promise.all([
         adminFetch<Product[]>('/api/admin/products'),
-        adminFetch<Category[]>(catEndpoint),
-        adminFetch<ShippingRule[]>('/api/admin/shipping-rules')
+        adminFetch<{ categories: Category[]; shippingRules: ShippingRule[] }>(
+          '/api/admin/products/meta'
+        )
       ]);
       setProducts(prods);
-      setCategories(cats);
-      setShippingRules(rules);
+      setCategories(meta.categories);
+      setShippingRules(meta.shippingRules);
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载商品数据失败');
     }
@@ -30,7 +30,7 @@ export function ProductsPage({ canManageCategories }: { canManageCategories: boo
 
   useEffect(() => {
     loadAll();
-  }, [canManageCategories]);
+  }, []);
 
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
@@ -83,15 +83,17 @@ export function ProductsPage({ canManageCategories }: { canManageCategories: boo
       return;
     }
     const defaultCover = 'https://dummyimage.com/600x600/1e293b/f8fafc&text=Product';
+    const defaultShippingRule = shippingRules.find((r) => r.isDefault) ?? shippingRules[0];
     setEditing({
       categoryId: categories[0].id,
-      shippingRuleId: shippingRules[0].id,
+      shippingRuleId: defaultShippingRule.id,
       title: '',
       subtitle: '',
       coverUrl: defaultCover,
       galleryUrls: [defaultCover],
       descriptionHtml: '<p>商品详情介绍</p>',
       status: 'ON_SALE',
+      sortOrder: 100,
       skus: [
         {
           skuCode: `SKU-${Date.now()}`,
@@ -116,6 +118,7 @@ export function ProductsPage({ canManageCategories }: { canManageCategories: boo
       galleryUrls: p.galleryUrls.length > 0 ? p.galleryUrls : [p.coverUrl],
       descriptionHtml: p.descriptionHtml,
       status: p.status,
+      sortOrder: p.sortOrder,
       skus: p.skus.map((s) => ({
         ...s,
         priceYuan: formatYuan(s.priceCents)

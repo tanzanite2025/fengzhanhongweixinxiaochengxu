@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import type { PrismaClient } from '@prisma/client';
@@ -21,6 +22,11 @@ export type AdminPermission = (typeof ALL_ADMIN_PERMISSIONS)[number];
 interface JwtPayload {
   sub: number;
   kind: 'USER' | 'ADMIN';
+  pv?: string;
+}
+
+function passwordFingerprint(passwordHash: string): string {
+  return crypto.createHash('sha256').update(passwordHash).digest('hex').slice(0, 12);
 }
 
 declare module 'fastify' {
@@ -46,18 +52,15 @@ export class AuthService {
   ) {}
 
   /**
-   * Sign a short/medium-lived JWT containing only subject ID and principal kind.
+   * Sign a short/medium-lived JWT containing only subject ID, principal kind, and optional password fingerprint.
    */
-  public signToken(sub: number, kind: 'USER' | 'ADMIN'): string {
-    return jwt.sign({ sub, kind }, this.config.jwtSecret, {
+  public signToken(sub: number, kind: 'USER' | 'ADMIN', pv?: string): string {
+    return jwt.sign({ sub, kind, ...(pv ? { pv } : {}) }, this.config.jwtSecret, {
       expiresIn: this.config.jwtExpiresIn as jwt.SignOptions['expiresIn']
     });
   }
 
-  /**
-   * Verify a bearer JWT token and enforce principal kind.
-   */
-  public verifyToken(token: string, expectedKind: 'USER' | 'ADMIN'): number {
+  private verifyTokenPayload(token: string, expectedKind: 'USER' | 'ADMIN'): JwtPayload {
     let decoded: unknown;
     try {
       decoded = jwt.verify(token, this.config.jwtSecret);
@@ -74,7 +77,14 @@ export class AuthService {
       throw new AppError(401, 'UNAUTHORIZED', '无效的登录凭证');
     }
 
-    return (decoded as JwtPayload).sub;
+    return decoded as JwtPayload;
+  }
+
+  /**
+   * Verify a bearer JWT token and enforce principal kind.
+   */
+  public verifyToken(token: string, expectedKind: 'USER' | 'ADMIN'): number {
+    return this.verifyTokenPayload(token, expectedKind).sub;
   }
 
   /**
@@ -100,7 +110,7 @@ export class AuthService {
       url.searchParams.set('js_code', trimmedCode);
       url.searchParams.set('grant_type', 'authorization_code');
 
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
       if (!response.ok) {
         throw new CriticalError(`WeChat jscode2session HTTP error: ${response.status}`);
       }
@@ -162,7 +172,7 @@ export class AuthService {
       throw new AppError(401, 'INVALID_CREDENTIALS', '账号或密码错误');
     }
 
-    const token = this.signToken(admin.id, 'ADMIN');
+    const token = this.signToken(admin.id, 'ADMIN', passwordFingerprint(admin.passwordHash));
     return { token, adminId: admin.id };
   }
 
@@ -174,10 +184,13 @@ export class AuthService {
     const userId = this.verifyToken(token, 'USER');
     const exists = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true }
+      select: { id: true, openId: true }
     });
     if (!exists) {
       throw new AppError(401, 'USER_NOT_FOUND', '用户不存在或已注销');
+    }
+    if (this.config.wechatMode === 'live' && exists.openId.startsWith('mock_openid_')) {
+      throw new AppError(401, 'MOCK_USER_IN_LIVE_MODE', '检测到旧版测试登录凭证，请重新授权登录');
     }
     request.authUserId = exists.id;
   };
@@ -188,7 +201,7 @@ export class AuthService {
   public requireAdminPermission = (requiredPermission?: AdminPermission) => {
     return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
       const token = extractBearerToken(request.headers.authorization);
-      const adminId = this.verifyToken(token, 'ADMIN');
+      const { sub: adminId, pv } = this.verifyTokenPayload(token, 'ADMIN');
 
       const admin = await this.prisma.adminUser.findUnique({
         where: { id: adminId },
@@ -196,6 +209,7 @@ export class AuthService {
           id: true,
           username: true,
           displayName: true,
+          passwordHash: true,
           permissions: true,
           isActive: true
         }
@@ -206,6 +220,9 @@ export class AuthService {
       }
       if (!admin.isActive) {
         throw new AppError(403, 'ACCOUNT_DISABLED', '该管理员账号已被禁用');
+      }
+      if (!pv || pv !== passwordFingerprint(admin.passwordHash)) {
+        throw new AppError(401, 'TOKEN_REVOKED', '账号密码已变更，请重新登录');
       }
 
       const permissions = parseStringArrayJson(admin.permissions, `AdminUser(${admin.id}).permissions`);

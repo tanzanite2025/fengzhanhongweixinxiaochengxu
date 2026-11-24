@@ -1,20 +1,31 @@
 import 'dotenv/config';
 import { buildApp } from './app.js';
 import { loadConfig } from './config/env.js';
-import { createPrismaClient } from './lib/prisma.js';
+import { configureSqliteConcurrency, createPrismaClient } from './lib/prisma.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const prisma = createPrismaClient(config.databaseUrl);
   await prisma.$connect();
+  await configureSqliteConcurrency(prisma, config.databaseUrl);
 
   const { app, orderService } = await buildApp({ prisma, config });
 
-  // Scan and expire unpaid orders every 60 seconds
+  // Scan and expire unpaid orders every 60 seconds with re-entrancy guard
+  let expireScanRunning = false;
   const expireTimer = setInterval(() => {
-    orderService.cancelExpiredOrders().catch((err) => {
-      app.log.error({ err }, 'Failed to cancel expired orders');
-    });
+    if (expireScanRunning) {
+      return;
+    }
+    expireScanRunning = true;
+    orderService
+      .cancelExpiredOrders()
+      .catch((err) => {
+        app.log.error({ err }, 'Failed to cancel expired orders');
+      })
+      .finally(() => {
+        expireScanRunning = false;
+      });
   }, 60_000);
   expireTimer.unref();
 

@@ -112,6 +112,17 @@ export function registerShippingRoutes(
     { preHandler: authService.requireAdminPermission('shipping:manage') },
     async (request) => {
       const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params);
+      const rule = await prisma.shippingRule.findUnique({ where: { id: params.id } });
+      if (!rule) {
+        throw new AppError(404, 'SHIPPING_RULE_NOT_FOUND', '运费模板不存在');
+      }
+      if (rule.isDefault) {
+        throw new AppError(
+          400,
+          'CANNOT_DELETE_DEFAULT_RULE',
+          '不能直接删除默认运费模板，请先将其他模板设为默认'
+        );
+      }
       const inUseCount = await prisma.product.count({ where: { shippingRuleId: params.id } });
       if (inUseCount > 0) {
         throw new AppError(400, 'SHIPPING_RULE_IN_USE', '该运费模板正在被商品使用，无法删除');
