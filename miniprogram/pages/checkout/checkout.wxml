@@ -1,0 +1,52 @@
+<view class="container checkout-page">
+  <view class="card address-card" bindtap="goSelectAddress">
+    <view wx:if="{{address}}">
+      <view class="addr-main">{{address.receiverName}} {{address.receiverPhone}}</view>
+      <view class="muted addr-sub">
+        {{address.province}} {{address.city}} {{address.district}} {{address.detailAddress}}
+      </view>
+    </view>
+    <view wx:else class="addr-empty">+ 请选择或新增收货地址</view>
+  </view>
+
+  <view wx:if="{{previewError}}" class="card error-banner">{{previewError}}</view>
+
+  <view class="card">
+    <view wx:for="{{previewItems}}" wx:key="skuId" class="line-item">
+      <image class="line-img" src="{{item.skuImageUrl}}" mode="aspectFill" />
+      <view class="line-info">
+        <view class="line-title">{{item.productTitle}}</view>
+        <view class="muted">{{item.skuSpecName}}</view>
+        <view class="line-bottom">
+          <text class="price">¥{{item.unitPriceText}}</text>
+          <text class="muted">x{{item.quantity}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="fee-row">
+      <text class="muted">商品金额</text>
+      <text>¥{{itemsAmountText}}</text>
+    </view>
+    <view class="fee-row">
+      <text class="muted">运费</text>
+      <text>¥{{shippingFeeText}}</text>
+    </view>
+    <view class="remark-row">
+      <text class="muted">买家留言</text>
+      <input class="remark-input" placeholder="选填，可填写发货偏好" value="{{buyerRemark}}" bindinput="onRemarkInput" />
+    </view>
+  </view>
+
+  <view class="checkout-footer">
+    <view>
+      <text class="muted">实付：</text>
+      <text class="price footer-total">¥{{totalAmountText}}</text>
+    </view>
+    <view class="submit-btn" bindtap="onSubmitOrder">
+      {{submitting ? '提交中...' : '立即支付'}}
+    </view>
+  </view>
+</view>

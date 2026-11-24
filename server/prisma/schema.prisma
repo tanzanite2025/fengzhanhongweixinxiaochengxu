@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int              @id @default(autoincrement())
+  openId     String           @unique
+  unionId    String?
+  nickname   String?
+  avatarUrl  String?
+  phone      String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  addresses  UserAddress[]
+  cartItems  CartItem[]
+  orders     Order[]
+  afterSales AfterSaleOrder[]
+}
+
+model AdminUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  role         String   @default("OPERATOR") // SUPER_ADMIN | OPERATOR
+  permissions  String   // JSON array of allowed route/module keys
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model ShippingRule {
+  id                 Int       @id @default(autoincrement())
+  name               String    @unique
+  isDefault          Boolean   @default(false)
+  baseFeeCents       Int       @default(0)
+  extraItemFeeCents  Int       @default(0)
+  freeThresholdCents Int?
+  excludedProvinces  String    @default("[]") // JSON string[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  products           Product[]
+}
+
+model Product {
+  id              Int          @id @default(autoincrement())
+  categoryId      Int
+  shippingRuleId  Int
+  title           String
+  subtitle        String?
+  coverUrl        String
+  galleryUrls     String       @default("[]") // JSON string[]
+  descriptionHtml String       @default("")
+  status          String       @default("ON_SALE") // ON_SALE | OFF_SALE
+  sortOrder       Int          @default(0)
+  salesCount      Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  category        Category     @relation(fields: [categoryId], references: [id])
+  shippingRule    ShippingRule @relation(fields: [shippingRuleId], references: [id])
+  skus            ProductSku[]
+}
+
+model ProductSku {
+  id                 Int        @id @default(autoincrement())
+  productId          Int
+  skuCode            String     @unique
+  specName           String
+  specImageUrl       String?
+  priceCents         Int
+  originalPriceCents Int?
+  stock              Int
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  product            Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems          CartItem[]
+  orderItems         OrderItem[]
+}
+
+model CartItem {
+  id        Int        @id @default(autoincrement())
+  userId    Int
+  skuId     Int
+  quantity  Int
+  selected  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sku       ProductSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skuId])
+}
+
+model UserAddress {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  receiverName  String
+  receiverPhone String
+  province      String
+  city          String
+  district      String
+  detailAddress String
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                       Int              @id @default(autoincrement())
+  orderNo                  String           @unique
+  userId                   Int
+  status                   String           // PENDING_PAYMENT | PENDING_SHIPMENT | SHIPPED | COMPLETED | CANCELLED | REFUND_REQUESTED | REFUNDED
+  itemsAmountCents         Int
+  shippingFeeCents         Int
+  totalAmountCents         Int
+  receiverName             String
+  receiverPhone            String
+  receiverProvince         String
+  receiverCity             String
+  receiverDistrict         String
+  receiverDetail           String
+  buyerRemark              String?
+  wechatPrepayId           String?
+  wechatTransactionId      String?
+  paidAt                   DateTime?
+  expireAt                 DateTime
+  expressCompanyCode       String?
+  expressCompanyName       String?
+  trackingNumber           String?
+  shippedAt                DateTime?
+  wechatShippingSyncStatus String           @default("PENDING") // PENDING | SYNCED | FAILED | NOT_REQUIRED
+  wechatShippingSyncError  String?
+  wechatShippingSyncedAt   DateTime?
+  completedAt              DateTime?
+  cancelledAt              DateTime?
+  cancelReason             String?
+  abnormalPayStatus        String           @default("NONE") // NONE | AUTO_REFUNDED | MANUAL_REFUND_REQUIRED
+  abnormalPayNote          String?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  user                     User             @relation(fields: [userId], references: [id])
+  items                    OrderItem[]
+  paymentRecords           PaymentRecord[]
+  afterSales               AfterSaleOrder[]
+
+  @@index([userId, status])
+  @@index([status, expireAt])
+}
+
+model OrderItem {
+  id             Int        @id @default(autoincrement())
+  orderId        Int
+  productId      Int
+  skuId          Int
+  productTitle   String
+  skuSpecName    String
+  skuImageUrl    String
+  unitPriceCents Int
+  quantity       Int
+  subtotalCents  Int
+  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku            ProductSku @relation(fields: [skuId], references: [id])
+}
+
+model PaymentRecord {
+  id          Int       @id @default(autoincrement())
+  orderId     Int
+  outTradeNo  String    @unique
+  transactionId String?
+  amountCents Int
+  status      String    // INIT | SUCCESS | CLOSED | FAILED
+  rawCallback String?
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model AfterSaleOrder {
+  id                Int       @id @default(autoincrement())
+  afterSaleNo       String    @unique
+  orderId           Int
+  userId            Int
+  type              String    // REFUND_ONLY | RETURN_AND_REFUND
+  status            String    // PENDING_REVIEW | APPROVED_REFUNDING | REFUNDED | REJECTED | CANCELLED
+  reason            String
+  description       String?
+  refundAmountCents Int
+  outRefundNo       String    @unique
+  wechatRefundId    String?
+  rejectReason      String?
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  refundedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id])
+
+  @@index([orderId])
+  @@index([userId])
+}

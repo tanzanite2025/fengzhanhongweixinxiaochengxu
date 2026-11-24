@@ -1,0 +1,98 @@
+.checkout-page {
+  padding-bottom: 140rpx;
+}
+
+.addr-main {
+  font-weight: 700;
+  font-size: 30rpx;
+}
+
+.addr-sub {
+  margin-top: 8rpx;
+}
+
+.addr-empty {
+  font-weight: 600;
+  padding: 12rpx 0;
+}
+
+.error-banner {
+  background-color: #fef2f2;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.line-item {
+  display: flex;
+  gap: 20rpx;
+  padding: 12rpx 0;
+}
+
+.line-img {
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 14rpx;
+  background-color: #e5e7eb;
+}
+
+.line-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.line-title {
+  font-weight: 600;
+}
+
+.line-bottom {
+  display: flex;
+  justify-content: space-between;
+}
+
+.fee-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10rpx 0;
+}
+
+.remark-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid #f3f4f6;
+}
+
+.remark-input {
+  flex: 1;
+  text-align: right;
+}
+
+.checkout-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ffffff;
+  border-top: 1rpx solid #e5e7eb;
+  padding: 16rpx 24rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-total {
+  font-size: 38rpx;
+}
+
+.submit-btn {
+  background-color: #111827;
+  color: #ffffff;
+  padding: 0 48rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  border-radius: 999rpx;
+  font-weight: 600;
+}

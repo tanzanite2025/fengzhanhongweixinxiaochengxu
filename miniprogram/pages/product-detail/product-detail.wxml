@@ -1,0 +1,79 @@
+<view wx:if="{{loading}}" class="empty-box">加载商品详情中...</view>
+
+<view wx:elif="{{product}}" class="detail-page">
+  <swiper class="banner" indicator-dots autoplay circular>
+    <swiper-item wx:for="{{bannerImages}}" wx:key="*this">
+      <image class="banner-img" src="{{item}}" mode="aspectFill" />
+    </swiper-item>
+  </swiper>
+
+  <view class="card detail-head">
+    <view class="detail-price-row">
+      <view class="price detail-price">¥{{selectedPriceText}}</view>
+      <view class="muted">已售 {{product.salesCount}} 件</view>
+    </view>
+    <view class="detail-title">{{product.title}}</view>
+    <view wx:if="{{product.subtitle}}" class="muted detail-sub">{{product.subtitle}}</view>
+  </view>
+
+  <view class="card">
+    <view class="spec-trigger" bindtap="openSkuModal" data-action="buy">
+      <text class="muted">已选规格</text>
+      <text class="spec-value">{{selectedSku ? selectedSku.specName : '请选择'}}（库存 {{selectedSku ? selectedSku.stock : 0}}）</text>
+    </view>
+    <view class="shipping-row">
+      <text class="muted">物流运费</text>
+      <text class="shipping-text">{{shippingHint}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">商品详情</view>
+    <rich-text nodes="{{product.descriptionHtml}}" />
+  </view>
+
+  <view class="bottom-bar">
+    <view class="cart-icon-btn" bindtap="goCart">购物车</view>
+    <view class="action-add" data-action="cart" bindtap="openSkuModal">加入购物车</view>
+    <view class="action-buy" data-action="buy" bindtap="openSkuModal">立即购买</view>
+  </view>
+
+  <view wx:if="{{showSkuModal}}" class="modal-mask" bindtap="closeSkuModal">
+    <view class="modal-panel" catchtap="">
+      <view class="modal-header">
+        <image class="modal-thumb" src="{{selectedSku && selectedSku.specImageUrl ? selectedSku.specImageUrl : product.coverUrl}}" mode="aspectFill" />
+        <view>
+          <view class="price modal-price">¥{{selectedPriceText}}</view>
+          <view class="muted">库存：{{selectedSku ? selectedSku.stock : 0}} 件</view>
+          <view class="muted">已选：{{selectedSku ? selectedSku.specName : ''}}</view>
+        </view>
+      </view>
+
+      <view class="modal-label">选择规格</view>
+      <view class="sku-list">
+        <view
+          wx:for="{{product.skus}}"
+          wx:key="id"
+          class="sku-chip {{selectedSku && selectedSku.id === item.id ? 'sku-chip-active' : ''}} {{item.stock === 0 ? 'sku-chip-disabled' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onSelectSku"
+        >
+          {{item.specName}}
+        </view>
+      </view>
+
+      <view class="qty-row">
+        <view class="modal-label">购买数量</view>
+        <view class="qty-ctrl">
+          <view class="qty-btn" data-delta="-1" bindtap="onChangeQty">-</view>
+          <view class="qty-num">{{quantity}}</view>
+          <view class="qty-btn" data-delta="1" bindtap="onChangeQty">+</view>
+        </view>
+      </view>
+
+      <view class="btn-primary" bindtap="onConfirmSkuAction">
+        {{modalAction === 'cart' ? '确认加入购物车' : '立即下单'}}
+      </view>
+    </view>
+  </view>
+</view>

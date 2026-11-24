@@ -1,0 +1,47 @@
+<view>
+  <view class="tab-bar">
+    <view
+      wx:for="{{tabs}}"
+      wx:key="key"
+      class="tab-item {{activeTab === item.key ? 'tab-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onSwitchTab"
+    >
+      {{item.label}}
+    </view>
+  </view>
+
+  <view class="container">
+    <view wx:if="{{loading}}" class="empty-box">加载订单中...</view>
+    <view wx:elif="{{orders.length === 0}}" class="empty-box">暂无相关订单</view>
+
+    <view
+      wx:for="{{orders}}"
+      wx:key="id"
+      class="card"
+      data-id="{{item.id}}"
+      bindtap="goOrderDetail"
+    >
+      <view class="order-head">
+        <text class="muted">单号 {{item.orderNo}}</text>
+        <text class="order-status">{{item.statusLabel}}</text>
+      </view>
+      <view wx:for="{{item.formattedItems}}" wx:for-item="line" wx:key="id" class="order-line">
+        <image class="line-img" src="{{line.skuImageUrl}}" mode="aspectFill" />
+        <view class="line-info">
+          <view class="line-title">{{line.productTitle}}</view>
+          <view class="muted">{{line.skuSpecName}} × {{line.quantity}}</view>
+        </view>
+        <view>¥{{line.unitPriceText}}</view>
+      </view>
+      <view class="order-foot">
+        <text class="muted">实付款：</text>
+        <text class="price">¥{{item.totalAmountText}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{!loading && orders.length > 0}}" class="empty-box" style="padding: 32rpx 0;">
+      {{loadingMore ? '加载更多订单...' : (hasMore ? '上拉加载更多' : '没有更多订单了')}}
+    </view>
+  </view>
+</view>

@@ -1,0 +1,32 @@
+<view class="cat-layout">
+  <scroll-view scroll-y class="cat-sidebar">
+    <view
+      wx:for="{{categories}}"
+      wx:key="id"
+      class="cat-tab {{item.id === activeCategoryId ? 'cat-tab-active' : ''}}"
+      data-id="{{item.id}}"
+      bindtap="onSelectCategory"
+    >
+      {{item.name}}
+    </view>
+  </scroll-view>
+
+  <scroll-view scroll-y class="cat-content">
+    <view wx:if="{{loading}}" class="empty-box">加载中...</view>
+    <view wx:elif="{{products.length === 0}}" class="empty-box">该分类暂无商品</view>
+    <view
+      wx:for="{{products}}"
+      wx:key="id"
+      class="cat-item"
+      data-id="{{item.id}}"
+      bindtap="goDetail"
+    >
+      <image class="cat-item-img" src="{{item.coverUrl}}" mode="aspectFill" />
+      <view class="cat-item-info">
+        <view class="cat-item-title">{{item.title}}</view>
+        <view wx:if="{{item.subtitle}}" class="muted">{{item.subtitle}}</view>
+        <view class="price cat-item-price">¥{{item.minPriceText}}</view>
+      </view>
+    </view>
+  </scroll-view>
+</view>

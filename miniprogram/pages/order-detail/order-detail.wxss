@@ -1,0 +1,120 @@
+.detail-wrap {
+  padding-bottom: 140rpx;
+}
+
+.status-card {
+  background-color: #111827;
+  color: #ffffff;
+}
+
+.status-card .muted {
+  color: #d1d5db;
+  margin-top: 8rpx;
+}
+
+.status-title {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.section-head {
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.copy-btn {
+  color: #2563eb;
+  font-size: 24rpx;
+}
+
+.item-row {
+  display: flex;
+  gap: 16rpx;
+  padding: 12rpx 0;
+  align-items: center;
+}
+
+.item-img {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 12rpx;
+  background-color: #e5e7eb;
+}
+
+.item-info {
+  flex: 1;
+}
+
+.item-title {
+  font-weight: 600;
+}
+
+.fee-summary {
+  border-top: 1rpx solid #f3f4f6;
+  padding-top: 16rpx;
+  margin-top: 12rpx;
+}
+
+.total-row {
+  font-weight: 700;
+  margin-top: 8rpx;
+}
+
+.reject-text {
+  color: #dc2626;
+  margin-top: 8rpx;
+}
+
+.action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ffffff;
+  border-top: 1rpx solid #e5e7eb;
+  padding: 16rpx 24rpx;
+  display: flex;
+  gap: 16rpx;
+}
+
+.op-btn {
+  flex: 1;
+}
+
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32rpx;
+  z-index: 99;
+}
+
+.modal-box {
+  width: 100%;
+  background-color: #ffffff;
+  border-radius: 24rpx;
+  padding: 32rpx;
+}
+
+.reason-input {
+  background-color: #f3f4f6;
+  height: 84rpx;
+  padding: 0 24rpx;
+  border-radius: 14rpx;
+  margin: 20rpx 0 28rpx;
+}
+
+.modal-btns {
+  display: flex;
+  gap: 16rpx;
+}

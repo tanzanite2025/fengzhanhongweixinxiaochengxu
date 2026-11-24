@@ -1,0 +1,42 @@
+<view class="container">
+  <view class="search-bar">
+    <input
+      class="search-input"
+      placeholder="搜索商品名称或卖点"
+      value="{{keyword}}"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onSearch"
+    />
+    <view class="search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty-box">正在加载精选商品...</view>
+  <view wx:elif="{{products.length === 0}}" class="empty-box">暂无符合条件的商品</view>
+
+  <view wx:else class="product-grid">
+    <view
+      wx:for="{{products}}"
+      wx:key="id"
+      class="product-card"
+      data-id="{{item.id}}"
+      bindtap="goDetail"
+    >
+      <image class="product-cover" src="{{item.coverUrl}}" mode="aspectFill" />
+      <view class="product-info">
+        <view class="product-title">{{item.title}}</view>
+        <view wx:if="{{item.subtitle}}" class="product-sub muted">{{item.subtitle}}</view>
+        <view class="product-bottom">
+          <view class="price">
+            <text class="price-symbol">¥</text>{{item.minPriceText}}
+          </view>
+          <view class="muted">已售 {{item.salesCount}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{!loading && products.length > 0}}" class="empty-box" style="padding: 36rpx 0;">
+    {{loadingMore ? '正在加载更多...' : (hasMore ? '上拉加载更多' : '没有更多商品了')}}
+  </view>
+</view>

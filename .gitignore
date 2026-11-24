@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.db
+*.db-journal
+*.pem
+server/uploads/*
+!server/uploads/.gitkeep
+miniprogram/miniprogram_npm/
+admin/dist/
+*.tsbuildinfo
+project.private.config.json
+.DS_Store

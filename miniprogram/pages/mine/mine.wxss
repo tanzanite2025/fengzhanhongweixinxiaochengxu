@@ -1,0 +1,55 @@
+.profile-card {
+  background-color: #111827;
+  color: #ffffff;
+}
+
+.profile-card .muted {
+  color: #d1d5db;
+  margin-top: 8rpx;
+}
+
+.profile-title {
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.menu-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.section-title {
+  font-weight: 700;
+}
+
+.order-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12rpx;
+}
+
+.order-entry {
+  background-color: #f3f4f6;
+  text-align: center;
+  padding: 20rpx 0;
+  border-radius: 14rpx;
+  font-size: 24rpx;
+}
+
+.list-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid #f3f4f6;
+}
+
+.contact-btn {
+  width: 100% !important;
+  box-sizing: border-box;
+  margin-top: 20rpx;
+  background-color: #f3f4f6;
+  color: #111827;
+  font-size: 26rpx;
+  border-radius: 999rpx;
+}

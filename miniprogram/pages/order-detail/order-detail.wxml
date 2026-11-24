@@ -1,0 +1,63 @@
+<view wx:if="{{order}}" class="container detail-wrap">
+  <view class="card status-card">
+    <view class="status-title">{{order.statusLabel}}</view>
+    <view class="muted">订单编号：{{order.orderNo}}</view>
+  </view>
+
+  <view wx:if="{{order.trackingNumber}}" class="card">
+    <view class="section-head">物流信息</view>
+    <view class="row-between">
+      <text>{{order.expressCompanyName}} · {{order.trackingNumber}}</text>
+      <text class="copy-btn" bindtap="onCopyTracking">复制单号</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-head">收货地址</view>
+    <view>{{order.receiverName}} {{order.receiverPhone}}</view>
+    <view class="muted">{{order.receiverProvince}} {{order.receiverCity}} {{order.receiverDistrict}} {{order.receiverDetail}}</view>
+  </view>
+
+  <view class="card">
+    <view wx:for="{{order.formattedItems}}" wx:key="id" class="item-row">
+      <image class="item-img" src="{{item.skuImageUrl}}" mode="aspectFill" />
+      <view class="item-info">
+        <view class="item-title">{{item.productTitle}}</view>
+        <view class="muted">{{item.skuSpecName}} × {{item.quantity}}</view>
+      </view>
+      <view>¥{{item.unitPriceText}}</view>
+    </view>
+    <view class="fee-summary">
+      <view class="row-between muted"><text>商品小计</text><text>¥{{order.itemsAmountText}}</text></view>
+      <view class="row-between muted"><text>运费</text><text>¥{{order.shippingFeeText}}</text></view>
+      <view class="row-between total-row"><text>实付总额</text><text class="price">¥{{order.totalAmountText}}</text></view>
+    </view>
+  </view>
+
+  <view wx:if="{{order.latestAfterSale}}" class="card">
+    <view class="section-head">售后进度：{{order.latestAfterSale.statusLabel}}</view>
+    <view class="muted">售后单号：{{order.latestAfterSale.afterSaleNo}}</view>
+    <view class="muted">原因：{{order.latestAfterSale.reason}}</view>
+    <view wx:if="{{order.latestAfterSale.rejectReason}}" class="reject-text">
+      驳回说明：{{order.latestAfterSale.rejectReason}}
+    </view>
+  </view>
+
+  <view class="action-bar">
+    <view wx:if="{{order.status === 'PENDING_PAYMENT'}}" class="btn-outline op-btn" bindtap="onCancelOrder">取消订单</view>
+    <view wx:if="{{order.status === 'PENDING_PAYMENT'}}" class="btn-primary op-btn" bindtap="onPayNow">立即支付</view>
+    <view wx:if="{{order.status === 'PENDING_SHIPMENT' || order.status === 'SHIPPED' || order.status === 'COMPLETED'}}" class="btn-outline op-btn" bindtap="openRefundModal">申请退款/售后</view>
+    <view wx:if="{{order.status === 'SHIPPED'}}" class="btn-primary op-btn" bindtap="onConfirmReceipt">确认收货</view>
+  </view>
+
+  <view wx:if="{{showRefundModal}}" class="modal-mask">
+    <view class="modal-box">
+      <view class="section-head">申请售后退款</view>
+      <input class="reason-input" placeholder="请填写退款原因（如：不想要了/规格拍错）" value="{{refundReason}}" bindinput="onReasonInput" />
+      <view class="modal-btns">
+        <view class="btn-outline op-btn" bindtap="closeRefundModal">取消</view>
+        <view class="btn-primary op-btn" bindtap="onSubmitRefund">提交申请</view>
+      </view>
+    </view>
+  </view>
+</view>

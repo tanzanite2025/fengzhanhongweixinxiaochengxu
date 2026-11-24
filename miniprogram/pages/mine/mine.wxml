@@ -1,0 +1,35 @@
+<view class="container">
+  <view class="card profile-card">
+    <view class="profile-title">{{merchantName}}</view>
+    <view class="muted">企业直营 · 正品保障 · 官方微信支付</view>
+  </view>
+
+  <view class="card">
+    <view class="menu-head">
+      <text class="section-title">我的订单</text>
+      <text class="muted" data-status="ALL" bindtap="goOrders">查看全部 ></text>
+    </view>
+    <view class="order-grid">
+      <view class="order-entry" data-status="PENDING_PAYMENT" bindtap="goOrders">待付款</view>
+      <view class="order-entry" data-status="PENDING_SHIPMENT" bindtap="goOrders">待发货</view>
+      <view class="order-entry" data-status="SHIPPED" bindtap="goOrders">待收货</view>
+      <view class="order-entry" data-status="REFUND_REQUESTED" bindtap="goOrders">售后退款</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="list-row" bindtap="goAddress">
+      <text>收货地址管理</text>
+      <text class="muted">></text>
+    </view>
+    <view class="list-row" data-doc="privacy" bindtap="goLegal">
+      <text>隐私政策</text>
+      <text class="muted">></text>
+    </view>
+    <view class="list-row" data-doc="terms" bindtap="goLegal">
+      <text>用户服务协议与退换货说明</text>
+      <text class="muted">></text>
+    </view>
+    <button class="contact-btn" open-type="contact">联系在线客服（{{servicePhone}}）</button>
+  </view>
+</view>

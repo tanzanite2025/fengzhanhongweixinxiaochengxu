@@ -1,0 +1,10 @@
+.legal-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  margin-bottom: 20rpx;
+}
+
+.legal-body {
+  line-height: 1.8;
+  color: #374151;
+}

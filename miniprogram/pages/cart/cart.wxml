@@ -1,0 +1,39 @@
+<view class="container cart-page">
+  <view wx:if="{{loading}}" class="empty-box">加载购物车...</view>
+  <view wx:elif="{{items.length === 0}}" class="empty-box">购物车还是空的，去逛逛吧</view>
+
+  <view wx:else>
+    <view wx:for="{{items}}" wx:key="id" class="card cart-item">
+      <view
+        class="check-box {{item.selected && item.available ? 'check-box-on' : ''}} {{!item.available ? 'check-box-disabled' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onToggleSelect"
+      >
+        {{item.selected && item.available ? '✓' : ''}}
+      </view>
+      <image class="cart-img" src="{{item.sku.specImageUrl || item.product.coverUrl}}" mode="aspectFill" />
+      <view class="cart-info">
+        <view class="cart-title">{{item.product.title}}</view>
+        <view class="muted">{{item.sku.specName}}</view>
+        <view wx:if="{{!item.available}}" class="warn-text">{{item.unavailableReason}}</view>
+        <view class="cart-bottom">
+          <view class="price">¥{{item.priceText}}</view>
+          <view class="cart-actions">
+            <view class="qty-btn" data-id="{{item.id}}" data-delta="-1" bindtap="onChangeQty">-</view>
+            <view class="qty-num">{{item.quantity}}</view>
+            <view class="qty-btn" data-id="{{item.id}}" data-delta="1" bindtap="onChangeQty">+</view>
+            <view class="del-btn" data-id="{{item.id}}" bindtap="onDeleteItem">删除</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="cart-footer">
+    <view>
+      <text class="muted">合计：</text>
+      <text class="price footer-total">¥{{totalAmountText}}</text>
+    </view>
+    <view class="checkout-btn" bindtap="onCheckout">去结算 ({{selectedCount}})</view>
+  </view>
+</view>

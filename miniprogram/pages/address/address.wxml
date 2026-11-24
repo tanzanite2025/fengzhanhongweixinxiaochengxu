@@ -1,0 +1,48 @@
+<view class="container">
+  <view class="top-actions">
+    <view class="btn-outline flex-btn" bindtap="onImportWechatAddress">一键导入微信地址</view>
+    <view class="btn-primary flex-btn" bindtap="openAddForm">新增收货地址</view>
+  </view>
+
+  <view wx:if="{{addresses.length === 0}}" class="empty-box">暂无收货地址，请新增或导入</view>
+
+  <view
+    wx:for="{{addresses}}"
+    wx:key="id"
+    class="card"
+    data-id="{{item.id}}"
+    bindtap="onSelectAddress"
+  >
+    <view class="addr-top">
+      <text class="addr-name">{{item.receiverName}} {{item.receiverPhone}}</text>
+      <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+    </view>
+    <view class="muted addr-detail">
+      {{item.province}} {{item.city}} {{item.district}} {{item.detailAddress}}
+    </view>
+    <view class="addr-ops" catchtap="">
+      <text class="op-link" data-id="{{item.id}}" bindtap="openEditForm">编辑</text>
+      <text class="op-link op-del" data-id="{{item.id}}" bindtap="onDeleteAddress">删除</text>
+    </view>
+  </view>
+
+  <view wx:if="{{showForm}}" class="form-mask">
+    <view class="form-panel">
+      <view class="form-title">{{editingId > 0 ? '编辑收货地址' : '新增收货地址'}}</view>
+      <input class="form-input" placeholder="收货人姓名" value="{{receiverName}}" data-field="receiverName" bindinput="onInputField" />
+      <input class="form-input" placeholder="11位手机号" type="number" value="{{receiverPhone}}" data-field="receiverPhone" bindinput="onInputField" />
+      <input class="form-input" placeholder="省份（如：广东省）" value="{{province}}" data-field="province" bindinput="onInputField" />
+      <input class="form-input" placeholder="城市（如：深圳市）" value="{{city}}" data-field="city" bindinput="onInputField" />
+      <input class="form-input" placeholder="区/县（如：南山区）" value="{{district}}" data-field="district" bindinput="onInputField" />
+      <input class="form-input" placeholder="详细街道门牌号" value="{{detailAddress}}" data-field="detailAddress" bindinput="onInputField" />
+      <view class="switch-row">
+        <text>设为默认地址</text>
+        <switch checked="{{isDefault}}" bindchange="onToggleDefault" />
+      </view>
+      <view class="form-btns">
+        <view class="btn-outline flex-btn" bindtap="closeForm">取消</view>
+        <view class="btn-primary flex-btn" bindtap="onSaveAddress">保存</view>
+      </view>
+    </view>
+  </view>
+</view>
